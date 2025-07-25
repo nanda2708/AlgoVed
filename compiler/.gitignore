@@ -12,9 +12,9 @@ node_modules/
 *.class
 
 # Ignore input/output/test files (optional if dynamically generated)
-output/
-input/
-test/
+/output/
+/input/
+/codes/
 
 # Ignore OS-specific files
 .DS_Store
