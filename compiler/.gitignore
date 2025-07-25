@@ -1,0 +1,21 @@
+# Ignore node modules and logs
+node_modules/
+*.log
+
+# Ignore environment variables
+.env
+
+# Ignore build/output artifacts
+*.out
+*.exe
+*.o
+*.class
+
+# Ignore input/output/test files (optional if dynamically generated)
+output/
+input/
+test/
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db

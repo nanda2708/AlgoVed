@@ -1,0 +1,22 @@
+# Ignore local dependencies
+node_modules
+
+# Ignore environment variables
+.env
+
+# Ignore logs
+*.log
+
+# Ignore OS and editor files
+.DS_Store
+Thumbs.db
+*.swp
+
+# Ignore test/build artifacts (optional)
+*.out
+*.exe
+*.o
+*.class
+output/
+input/
+test/
