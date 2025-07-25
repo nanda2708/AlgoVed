@@ -1,0 +1,27 @@
+@import "tailwindcss";
+@import 'prismjs/themes/prism-tomorrow.css';
+
+.bg-coding-dark {
+  background-color: #0f1117; /* Deep dark base */
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.03) 1px, transparent 0),
+    linear-gradient(135deg, rgba(0, 255, 255, 0.02), rgba(255, 0, 255, 0.02));
+  background-size: 28px 28px;
+  background-attachment: fixed;
+  color: #e2e8f0; /* soft light text */
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+.glass-panel-dark {
+  background: rgba(15, 17, 23, 0.8);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}

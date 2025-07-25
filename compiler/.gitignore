@@ -12,8 +12,8 @@ node_modules/
 *.class
 
 # Ignore input/output/test files (optional if dynamically generated)
-/output/
-/input/
+/outputs/
+/inputs/
 /codes/
 
 # Ignore OS-specific files
