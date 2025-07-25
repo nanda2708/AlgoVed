@@ -1,14 +1,14 @@
 'use client';
 import { useState, useEffect, useContext, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AuthContext } from '../../../context/AuthContext.js';
+import { AuthContext } from '../../context/AuthContext.js';
 import dynamic from 'next/dynamic';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaSpinner, FaCheckCircle, FaTimesCircle, FaSort, FaClock } from 'react-icons/fa';
 
-const MonacoCodeEditor = dynamic(() => import('../../../components/MonacoCodeEditor.jsx'), { ssr: false });
+const MonacoCodeEditor = dynamic(() => import('../../components/MonacoCodeEditor.jsx'), { ssr: false });
 
 export default function ContestProblem() {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
