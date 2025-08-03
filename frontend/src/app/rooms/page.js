@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext.js';
@@ -161,4 +161,11 @@ const RoomsPage = () => {
   );
 };
 
-export default RoomsPage;
+// Wrap RoomsPage in Suspense for useRouter
+export default function RoomsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="text-white p-4">Loading...</div>}>
+      <RoomsPage />
+    </Suspense>
+  );
+}

@@ -1,12 +1,12 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
 import axios from 'axios';
 import ProblemFilter from '../components/ProblemFilter';
 import { motion } from 'framer-motion';
 
-export default function Problems() {
+const Problems = () => {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const [problems, setProblems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -92,5 +92,18 @@ export default function Problems() {
         </div>
       )}
     </div>
+  );
+};
+
+// Wrap Problems in Suspense for useRouter
+export default function ProblemsWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="flex justify-center items-center min-h-[50vh] text-lg text-gray-600 dark:text-gray-300 animate-pulse">
+        ⏳ Loading Practice Problems...
+      </div>
+    }>
+      <Problems />
+    </Suspense>
   );
 }

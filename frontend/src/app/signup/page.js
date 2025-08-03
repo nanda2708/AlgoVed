@@ -1,10 +1,10 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
 
-export default function Signup() {
+const Signup = () => {
   const { isLoggedIn, login } = useContext(AuthContext);
   const [formData, setFormData] = useState({
     username: '',
@@ -115,5 +115,14 @@ export default function Signup() {
         </a>
       </p>
     </div>
+  );
+};
+
+// Wrap Signup in Suspense for useRouter
+export default function SignupWrapper() {
+  return (
+    <Suspense fallback={<div className="text-center mt-16 text-gray-800 dark:text-white">Loading signup...</div>}>
+      <Signup />
+    </Suspense>
   );
 }

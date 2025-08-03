@@ -1,13 +1,14 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext.js';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaSpinner, FaClock, FaTrophy, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 
-export default function ContestDetails() {
+const ContestDetails = () => {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const { id } = useParams();
   const router = useRouter();
@@ -196,7 +197,10 @@ export default function ContestDetails() {
               className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 rounded-lg p-4 sm:p-6 shadow-lg"
             >
               <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4">Overview</h2>
-              <p className="text-sm text-slate-600 dark:text-slate-300">
+              <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
+                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{contest.description}</ReactMarkdown>
+              </div>
+              <p className="text-sm text-slate-600 dark:text-slate-300 mt-4">
                 <strong>Start Time:</strong> {new Date(contest.startTime).toLocaleString()}
               </p>
               <p className="text-sm text-slate-600 dark:text-slate-300">
@@ -386,5 +390,18 @@ export default function ContestDetails() {
         </AnimatePresence>
       </div>
     </div>
+  );
+};
+
+// Wrap ContestDetails in Suspense for useParams and useRouter
+export default function ContestDetailsWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen text-slate-600 dark:text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+        <FaSpinner className="animate-spin mr-2" /> Loading Contest Details...
+      </div>
+    }>
+      <ContestDetails />
+    </Suspense>
   );
 }

@@ -1,10 +1,10 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
 
-export default function Login() {
+const Login = () => {
   const { isLoggedIn, authLoading, login } = useContext(AuthContext);
   const [formData, setFormData] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
@@ -20,7 +20,7 @@ export default function Login() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const submission = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
@@ -50,7 +50,7 @@ export default function Login() {
 
       {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
 
-      <form onSubmit={submission} className="flex flex-col gap-4">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div>
           <label htmlFor="username" className="block text-sm text-gray-700 dark:text-gray-300 mb-1">
             Username
@@ -97,5 +97,18 @@ export default function Login() {
         </a>
       </p>
     </div>
+  );
+};
+
+// Wrap Login in Suspense for useRouter
+export default function LoginWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="max-w-md mx-auto mt-16 p-6 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl shadow text-center text-gray-600 dark:text-gray-400">
+        Loading...
+      </div>
+    }>
+      <Login />
+    </Suspense>
   );
 }

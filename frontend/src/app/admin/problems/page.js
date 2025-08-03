@@ -1,10 +1,12 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../../context/AuthContext';
 import axios from 'axios';
 
-export default function AdminProblems() {
+// Ensure NEXT_PUBLIC_API_URL is set in Vercel environment variables or .env.local
+// Example: NEXT_PUBLIC_API_URL=https://your-backend-api.com
+const AdminProblems = () => {
   const { isLoggedIn, authLoading, isAdmin } = useContext(AuthContext);
   const [problems, setProblems] = useState([]);
   const [filteredProblems, setFilteredProblems] = useState([]);
@@ -298,5 +300,18 @@ export default function AdminProblems() {
         </div>
       )}
     </div>
+  );
+};
+
+// Wrap AdminProblems in Suspense for useRouter
+export default function AdminProblemsWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="text-center mt-10 text-gray-600">
+        Loading...
+      </div>
+    }>
+      <AdminProblems />
+    </Suspense>
   );
 }

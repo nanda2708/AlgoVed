@@ -1,12 +1,11 @@
 'use client';
 import Link from 'next/link';
-import { useContext } from 'react';
+import { useContext, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
 
-export default function Navbar() {
-  const { isLoggedIn, logout } = useContext(AuthContext);
-  const {isAdmin, setIsAdmin} = useContext(AuthContext);
+const Navbar = () => {
+  const { isLoggedIn, logout, isAdmin } = useContext(AuthContext);
   const router = useRouter();
 
   const handleLogout = () => {
@@ -34,23 +33,22 @@ export default function Navbar() {
                   Admin
                 </Link>
               )}
-                {/* Profile Button */}
-                <div
-                  onClick={() => router.push('/profile')}
-                  className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer font-semibold text-white select-none"
-                >
-                  U
-                </div>
+              {/* Profile Button */}
+              <div
+                onClick={() => router.push('/profile')}
+                className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center cursor-pointer font-semibold text-white select-none"
+              >
+                U
+              </div>
 
-                {/* Dropdown Menu */}
-                  <button
-                    onClick={handleLogout}
-                    className="bg-red-500 text-white px-4 py-2 rounded-md cursor-pointer hover:bg-red-600 transition duration-200 shadow-sm"
-                  >
-                    Logout
-                  </button>
-                </div>
-
+              {/* Logout Button */}
+              <button
+                onClick={handleLogout}
+                className="bg-red-500 text-white px-4 py-2 rounded-md cursor-pointer hover:bg-red-600 transition duration-200 shadow-sm"
+              >
+                Logout
+              </button>
+            </div>
           ) : (
             <>
               <Link href="/login" className="hover:text-blue-300 transition">Login</Link>
@@ -60,5 +58,18 @@ export default function Navbar() {
         </div>
       </div>
     </nav>
+  );
+};
+
+// Wrap Navbar in Suspense for useRouter
+export default function NavbarWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="bg-gray-900 text-white py-4 shadow-md sticky top-0 z-50">
+        <div className="max-w-6xl mx-auto px-4 text-center text-gray-400">Loading Navbar...</div>
+      </div>
+    }>
+      <Navbar />
+    </Suspense>
   );
 }

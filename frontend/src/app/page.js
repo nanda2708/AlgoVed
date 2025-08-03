@@ -70,27 +70,6 @@ export default function Home() {
           </div>
         </section> */}
       </main>
-
-      {/* Animations */}
-      <style jsx>{`
-        .animate-fade-in {
-          animation: fadeIn 1s ease-in-out;
-        }
-        .animate-fade-in-delay {
-          animation: fadeIn 1.6s ease-in-out;
-        }
-        .animate-slide-up {
-          animation: slideUp 1.2s ease-out;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(40px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }

@@ -1,12 +1,15 @@
 'use client';
-import { useState, useEffect, useContext, useRef } from 'react';
+import { useState, useEffect, useContext, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import dynamicImport from 'next/dynamic';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext.js';
-import MonacoCodeEditor from '../components/MonacoCodeEditor.jsx';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaSpinner } from 'react-icons/fa';
+
+// Dynamically import MonacoCodeEditor to avoid SSR issues
+const MonacoCodeEditor = dynamicImport(() => import('../components/MonacoCodeEditor.jsx'), { ssr: false });
 
 const CodeRoomPage = () => {
   const { user, isLoggedIn, authLoading } = useContext(AuthContext);
@@ -20,6 +23,7 @@ const CodeRoomPage = () => {
   const [error, setError] = useState('');
   const [token, setToken] = useState(null);
   const [loadingRun, setLoadingRun] = useState(false);
+  const [loadingRoom, setLoadingRoom] = useState(true);
   const [panelWidth, setPanelWidth] = useState(70);
   const searchParams = useSearchParams();
   const router = useRouter();
@@ -35,12 +39,16 @@ const CodeRoomPage = () => {
     }
   }, []);
 
-  // Redirect if not logged in
+  // Redirect if not logged in or no roomId
   useEffect(() => {
     if (!authLoading && !isLoggedIn) {
       router.push('/login');
     }
-  }, [authLoading, isLoggedIn, router]);
+    if (!roomId) {
+      setError('No room ID provided');
+      setLoadingRoom(false);
+    }
+  }, [authLoading, isLoggedIn, roomId, router]);
 
   // Initialize Socket.IO
   useEffect(() => {
@@ -61,10 +69,11 @@ const CodeRoomPage = () => {
 
     newSocket.on('roomJoined', (data) => {
       console.log('Room joined:', data);
-      setCode(data.code);
-      setLanguage(data.language);
-      setInput(data.input);
-      setUsers(data.users);
+      setCode(data.code || '// Start coding here');
+      setLanguage(data.language || 'cpp');
+      setInput(data.input || '');
+      setUsers(data.users || []);
+      setLoadingRoom(false);
     });
 
     newSocket.on('userJoined', (data) => {
@@ -81,11 +90,13 @@ const CodeRoomPage = () => {
     newSocket.on('error', (error) => {
       console.error('Socket error:', error);
       setError(error);
+      setLoadingRoom(false);
     });
 
     newSocket.on('connect_error', (error) => {
       console.error('Socket connection error:', error.message);
       setError('Failed to connect to server');
+      setLoadingRoom(false);
     });
 
     return () => {
@@ -104,13 +115,15 @@ const CodeRoomPage = () => {
           headers: { Authorization: `Bearer ${token}` },
         });
         console.log('Room fetched:', response.data);
-        setCode(response.data.code);
-        setLanguage(response.data.language);
-        setInput(response.data.input);
-        setUsers(response.data.users);
+        setCode(response.data.code || '// Start coding here');
+        setLanguage(response.data.language || 'cpp');
+        setInput(response.data.input || '');
+        setUsers(response.data.users || []);
+        setLoadingRoom(false);
       } catch (err) {
         setError(err.response?.data?.message || 'Failed to fetch room');
         console.error('Fetch room error:', err);
+        setLoadingRoom(false);
       }
     };
     fetchRoom();
@@ -170,10 +183,10 @@ const CodeRoomPage = () => {
     }
   };
 
-  if (authLoading) {
+  if (authLoading || loadingRoom) {
     return (
       <div className="flex items-center justify-center h-screen text-slate-300 bg-gradient-to-br from-slate-900 to-slate-800">
-        <FaSpinner className="animate-spin mr-2" /> Loading...
+        <FaSpinner className="animate-spin mr-2" /> Loading Code Room...
       </div>
     );
   }
@@ -304,4 +317,15 @@ const CodeRoomPage = () => {
   );
 };
 
-export default CodeRoomPage;
+// Wrap CodeRoomPage in Suspense for useSearchParams and useRouter
+export default function CodeRoomPageWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen text-slate-300 bg-gradient-to-br from-slate-900 to-slate-800">
+        <FaSpinner className="animate-spin mr-2" /> Loading Code Room...
+      </div>
+    }>
+      <CodeRoomPage />
+    </Suspense>
+  );
+}

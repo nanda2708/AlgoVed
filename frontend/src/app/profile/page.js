@@ -1,10 +1,10 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
 
-export default function Profile() {
+const Profile = () => {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const [user, setUser] = useState(null);
   const [error, setError] = useState('');
@@ -104,7 +104,7 @@ export default function Profile() {
             ) : (
               <p className="text-gray-500 dark:text-gray-400">No achievements yet.</p>
             )}
-          </div>
+              </div>
         </div>
 
         {/* Future Analytics Card */}
@@ -114,5 +114,14 @@ export default function Profile() {
         </div>
       </div>
     </div>
+  );
+};
+
+// Wrap Profile in Suspense for useRouter
+export default function ProfileWrapper() {
+  return (
+    <Suspense fallback={<div className="text-center mt-20 text-white">Loading profile...</div>}>
+      <Profile />
+    </Suspense>
   );
 }

@@ -1,14 +1,15 @@
 'use client';
-import { useState, useContext } from 'react';
+import { useState, useEffect, useContext, Suspense } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
 import dynamic from 'next/dynamic';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 
 const MonacoCodeEditor = dynamic(() => import('../components/MonacoCodeEditor'), { ssr: false });
 
-export default function Compiler() {
+const Compiler = () => {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const router = useRouter();
 
@@ -31,11 +32,13 @@ int main() {
   const [toast, setToast] = useState('');
   const [language, setLanguage] = useState('cpp');
 
-  if (authLoading) return <div className="text-center mt-10 text-gray-600 dark:text-gray-400">Loading...</div>;
-  if (!isLoggedIn) {
-    router.push('/login');
-    return null;
-  }
+  const COMPILER_API_URL = process.env.NEXT_PUBLIC_COMPILER_API_URL || 'http://localhost:4000';
+
+  useEffect(() => {
+    if (!authLoading && !isLoggedIn) {
+      router.push('/login');
+    }
+  }, [authLoading, isLoggedIn, router]);
 
   const showToast = (msg) => {
     setToast(msg);
@@ -47,13 +50,14 @@ int main() {
     setOutput('');
     setLoadingRun(true);
     try {
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/run`, {
+      const res = await axios.post(`${COMPILER_API_URL}/run`, {
         language,
         code,
         input,
       });
       setOutput(res.data.output || '');
     } catch (err) {
+      console.error('Run error:', err);
       setError(err.response?.data?.error || 'Failed to run code');
     } finally {
       setLoadingRun(false);
@@ -65,21 +69,30 @@ int main() {
     setAiReview('');
     setLoadingReview(true);
     try {
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/ai-review`, { code });
+      const res = await axios.post(`${COMPILER_API_URL}/ai-review`, { code });
       const reviewText = typeof res.data.review === 'string' ? res.data.review : String(res.data.review || '');
       setAiReview(reviewText);
       showToast('✅ AI Review Complete!');
     } catch (err) {
+      console.error('AI Review Error:', err);
       setError(err.response?.data?.error || err.message || 'Failed to get AI review');
     } finally {
       setLoadingReview(false);
     }
   };
 
+  if (authLoading || !isLoggedIn) {
+    return <div className="text-center mt-10 text-gray-600 dark:text-gray-400">Loading...</div>;
+  }
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
       {toast && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-md z-50 animate-slide-down">
+        <div
+          className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-md z-50 animate-slide-down"
+          role="status"
+          aria-live="polite"
+        >
           {toast}
         </div>
       )}
@@ -142,7 +155,7 @@ int main() {
               <div className="text-center text-gray-600 dark:text-gray-400">Analyzing your code...</div>
             ) : aiReview ? (
               <div className="prose prose-sm dark:prose-invert max-w-none text-gray-800 dark:text-gray-100">
-                <ReactMarkdown>{aiReview}</ReactMarkdown>
+                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{aiReview}</ReactMarkdown>
               </div>
             ) : (
               <div className="text-gray-500 dark:text-gray-400">🤖 Click "AI Review" to analyze your code.</div>
@@ -169,5 +182,16 @@ int main() {
         </div>
       </div>
     </div>
+  );
+};
+
+// Wrap Compiler in Suspense for useRouter
+export default function CompilerWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="text-center mt-10 text-gray-600 dark:text-gray-400">Loading...</div>
+    }>
+      <Compiler />
+    </Suspense>
   );
 }

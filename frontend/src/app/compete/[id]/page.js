@@ -1,16 +1,17 @@
 'use client';
-import { useState, useEffect, useContext, useRef } from 'react';
+import { useState, useEffect, useContext, useRef, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AuthContext } from '../../context/AuthContext.js';
 import dynamic from 'next/dynamic';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
+import rehypeSanitize from 'rehype-sanitize';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaSpinner, FaCheckCircle, FaTimesCircle, FaSort, FaClock } from 'react-icons/fa';
 
 const MonacoCodeEditor = dynamic(() => import('../../components/MonacoCodeEditor.jsx'), { ssr: false });
 
-export default function ContestProblem() {
+const ContestProblem = () => {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const { id, problemId } = useParams();
   const router = useRouter();
@@ -258,7 +259,7 @@ int main() {
                 </p>
                 <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
                   <h2 className="text-lg font-semibold mb-2">Description</h2>
-                  <ReactMarkdown>{problem.description}</ReactMarkdown>
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{problem.description}</ReactMarkdown>
                   {problem.testCases?.length > 0 && (
                     <div className="mt-4">
                       <h3 className="text-md font-semibold">Sample Test Cases</h3>
@@ -516,5 +517,18 @@ int main() {
         </div>
       </div>
     </div>
+  );
+};
+
+// Wrap ContestProblem in Suspense for useParams and useRouter
+export default function ContestProblemWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen text-slate-600 dark:text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+        <FaSpinner className="animate-spin mr-2" /> Loading Contest Problem...
+      </div>
+    }>
+      <ContestProblem />
+    </Suspense>
   );
 }

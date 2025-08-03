@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useContext, useRef } from 'react';
+import { useState, useEffect, useContext, useRef, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AuthContext } from '../../../context/AuthContext.js';
 import dynamic from 'next/dynamic';
@@ -11,7 +11,7 @@ import rehypeSanitize from 'rehype-sanitize';
 
 const MonacoCodeEditor = dynamic(() => import('../../../components/MonacoCodeEditor.jsx'), { ssr: false });
 
-export default function ContestProblem() {
+const ContestProblem = () => {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const { id, problemId } = useParams();
   const router = useRouter();
@@ -594,5 +594,18 @@ int main() {
         </AnimatePresence>
       </motion.div>
     </div>
+  );
+};
+
+// Wrap ContestProblem in Suspense for useParams and useRouter
+export default function ContestProblemWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen text-slate-600 dark:text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+        <FaSpinner className="animate-spin mr-2" /> Loading Contest Problem...
+      </div>
+    }>
+      <ContestProblem />
+    </Suspense>
   );
 }

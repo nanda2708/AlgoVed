@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useContext, useRef } from 'react';
+import { useState, useEffect, useContext, useRef, Suspense } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AuthContext } from '../../context/AuthContext.js';
 import dynamic from 'next/dynamic';
@@ -7,12 +7,11 @@ import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaSpinner, FaCheckCircle, FaTimesCircle, FaSort } from 'react-icons/fa';
-import rehypeSanitize from "rehype-sanitize"; // Add this line at the top if not already imported
-
+import rehypeSanitize from 'rehype-sanitize';
 
 const MonacoCodeEditor = dynamic(() => import('../../components/MonacoCodeEditor.jsx'), { ssr: false });
 
-export default function Problem() {
+const Problem = () => {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const { id } = useParams();
   const router = useRouter();
@@ -49,7 +48,6 @@ int main() {
   const [panelWidth, setPanelWidth] = useState(50);
   const [sortBy, setSortBy] = useState('date-desc'); // For submissions sorting
   const containerRef = useRef(null);
-
 
   useEffect(() => {
     if (authLoading) return;
@@ -114,61 +112,61 @@ int main() {
     fetchProblemAndData();
   }, [id, isLoggedIn, authLoading, router]);
 
-const handleRun = async () => {
-  setError('');
-  setOutput('');
-  setVerdict('');
-  setTestCaseResults([]);
-  setLoadingRun(true);
+  const handleRun = async () => {
+    setError('');
+    setOutput('');
+    setVerdict('');
+    setTestCaseResults([]);
+    setLoadingRun(true);
 
-  try {
-    if (activeTestCase === 'custom') {
-      // Handle custom input
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/run`, {
-        language,
-        code,
-        input: customInput,
-      });
-      console.log('Run response for custom input:', res.data);
-      setOutput(res.data.output); // Update output state with custom input result
-      setVerdict('Custom input executed');
-    } else {
-      // Handle predefined test cases
-      const visibleTestCases = problem.testCases.filter((tc) => !tc.hidden);
-      const results = [];
-      let allPassed = true;
-
-      for (let i = 0; i < visibleTestCases.length; i++) {
-        const input = visibleTestCases[i].input;
+    try {
+      if (activeTestCase === 'custom') {
+        // Handle custom input
         const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/run`, {
           language,
           code,
-          input,
+          input: customInput,
         });
-        console.log(`Run response for test case ${i + 1}:`, res.data);
-        const passed = res.data.output.trim() === visibleTestCases[i].output.trim();
-        results[i] = {
-          input,
-          expected: visibleTestCases[i].output,
-          actual: res.data.output,
-          passed,
-          status: passed ? 'Accepted' : 'Wrong Answer',
-        };
-        if (!passed) allPassed = false;
-      }
+        console.log('Run response for custom input:', res.data);
+        setOutput(res.data.output); // Update output state with custom input result
+        setVerdict('Custom input executed');
+      } else {
+        // Handle predefined test cases
+        const visibleTestCases = problem.testCases.filter((tc) => !tc.hidden);
+        const results = [];
+        let allPassed = true;
 
-      setTestCaseResults(results);
-      setVerdict(allPassed ? 'All sample test cases passed' : `${results.filter((r) => r.passed).length}/${visibleTestCases.length} test cases passed`);
-      setActiveTestCase(0);
+        for (let i = 0; i < visibleTestCases.length; i++) {
+          const input = visibleTestCases[i].input;
+          const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/run`, {
+            language,
+            code,
+            input,
+          });
+          console.log(`Run response for test case ${i + 1}:`, res.data);
+          const passed = res.data.output.trim() === visibleTestCases[i].output.trim();
+          results[i] = {
+            input,
+            expected: visibleTestCases[i].output,
+            actual: res.data.output,
+            passed,
+            status: passed ? 'Accepted' : 'Wrong Answer',
+          };
+          if (!passed) allPassed = false;
+        }
+
+        setTestCaseResults(results);
+        setVerdict(allPassed ? 'All sample test cases passed' : `${results.filter((r) => r.passed).length}/${visibleTestCases.length} test cases passed`);
+        setActiveTestCase(0);
+      }
+    } catch (err) {
+      console.error('Run error:', err);
+      setError(err.response?.data?.error || 'Failed to run code');
+      setVerdict('Error running test cases');
+    } finally {
+      setLoadingRun(false);
     }
-  } catch (err) {
-    console.error('Run error:', err);
-    setError(err.response?.data?.error || 'Failed to run code');
-    setVerdict('Error running test cases');
-  } finally {
-    setLoadingRun(false);
-  }
-};
+  };
 
   const handleSubmit = async () => {
     setError('');
@@ -258,7 +256,7 @@ const handleRun = async () => {
     </div>
   );
 
-return (
+  return (
     <div className="flex h-screen w-full overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 font-sans" ref={containerRef}>
       {/* Left Panel */}
       <motion.div
@@ -304,7 +302,7 @@ return (
                 </p>
                 <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
                   <h2 className="text-lg font-semibold mb-2">Description</h2>
-                  <ReactMarkdown>{problem.description}</ReactMarkdown>
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{problem.description}</ReactMarkdown>
                   {problem.testCases?.length > 0 && (
                     <div className="mt-4">
                       <h3 className="text-md font-semibold">Sample Test Cases</h3>
@@ -463,7 +461,7 @@ return (
                           </div>
                         </div>
                         <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
-                          <ReactMarkdown>{comment.content}</ReactMarkdown>
+                          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{comment.content}</ReactMarkdown>
                         </div>
                         <button className="text-xs text-blue-500 hover:underline mt-2">Reply</button>
                       </motion.li>
@@ -478,7 +476,7 @@ return (
 
       {/* Right Panel */}
       <div className="flex flex-col h-full bg-white dark:bg-slate-800" style={{ width: `${100 - panelWidth}%` }}>
-        {/* Panel Width Controls - Optional: Add these buttons in the top-right corner */}
+        {/* Panel Width Controls */}
         <div className="flex justify-end gap-2 p-2 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
           <motion.button
             onClick={() => setPanelWidth(Math.max(30, panelWidth - 10))}
@@ -599,8 +597,8 @@ return (
               >
                 <strong>Verdict:</strong> {verdict}
               </motion.div>
-            )}          
-            </div>
+            )}
+          </div>
 
           <div className="flex justify-end gap-2 mt-4">
             <motion.button
@@ -633,63 +631,72 @@ return (
         whileHover={{ scale: 1.1 }}
         whileTap={{ scale: 0.9 }}
       >
-        {(!loadingReview) ? (<button
-          onClick={() => {
-            if (!showAiReview) handleAiReview();
-            else setShowAiReview(false);
-          }}
-          className="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors duration-200"
-          aria-label="Toggle AI Review"
-        >
-          🤖
-        </button>) :(
+        {(!loadingReview) ? (
           <button
-          className="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors duration-200"
-          aria-label="Toggle AI Review"
+            onClick={() => {
+              if (!showAiReview) handleAiReview();
+              else setShowAiReview(false);
+            }}
+            className="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors duration-200"
+            aria-label="Toggle AI Review"
           >
-          Loading...
-        </button>
-        )}
-
-
-  <AnimatePresence>
-    {showAiReview && (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={{ opacity: 0, y: 20 }}
-        className="absolute bottom-12 right-0 bg-white dark:bg-slate-800 shadow-lg rounded-lg p-4 w-80 max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-600"
-        role="dialog"
-        aria-label="AI Code Review"
-      >
-        <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">AI Code Review</h3>
-
-        {loadingReview ? (
-          <div className="text-center text-slate-600 dark:text-slate-300 flex items-center justify-center">
-            <FaSpinner className="animate-spin mr-2" /> Loading AI review...
-          </div>
-        ) : aiReview ? (
-          <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
-            <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
-              {aiReview}
-            </ReactMarkdown>
-          </div>
+            🤖
+          </button>
         ) : (
-          <div className="text-slate-600 dark:text-slate-400">No review available.</div>
+          <button
+            className="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors duration-200"
+            aria-label="Toggle AI Review"
+          >
+            Loading...
+          </button>
         )}
 
-        <button
-          type="button"
-          onClick={() => setShowAiReview(false)}
-          className="mt-2 text-sm text-blue-500 hover:underline"
-        >
-          Close
-        </button>
-      </motion.div>
-    )}
-  </AnimatePresence>
-
+        <AnimatePresence>
+          {showAiReview && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="absolute bottom-12 right-0 bg-white dark:bg-slate-800 shadow-lg rounded-lg p-4 w-80 max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-600"
+              role="dialog"
+              aria-label="AI Code Review"
+            >
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">AI Code Review</h3>
+              {loadingReview ? (
+                <div className="text-center text-slate-600 dark:text-slate-300 flex items-center justify-center">
+                  <FaSpinner className="animate-spin mr-2" /> Loading AI review...
+                </div>
+              ) : aiReview ? (
+                <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
+                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{aiReview}</ReactMarkdown>
+                </div>
+              ) : (
+                <div className="text-slate-600 dark:text-slate-400">No review available.</div>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowAiReview(false)}
+                className="mt-2 text-sm text-blue-500 hover:underline"
+              >
+                Close
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </motion.div>
     </div>
+  );
+};
+
+// Wrap Problem in Suspense for useParams and useRouter
+export default function ProblemWrapper() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-screen text-slate-600 dark:text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
+        <FaSpinner className="animate-spin mr-2" /> Loading Problem...
+      </div>
+    }>
+      <Problem />
+    </Suspense>
   );
 }
