@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import Room from '../models/Room.js';
 import User from '../models/User.js';
 import { v4 as uuidv4 } from 'uuid';
