@@ -1,14 +1,14 @@
 {
   "name": "compiler",
   "version": "1.0.0",
-  "description": "",
+  "description": "AlgoVed C++ compiler service",
   "license": "ISC",
   "author": "",
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev" : "nodemon index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

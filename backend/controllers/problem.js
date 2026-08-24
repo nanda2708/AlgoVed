@@ -1,99 +1,111 @@
-import Problem from '../models/Problem.js'
-// Create a new problem (admin only)
+import mongoose from 'mongoose';
+import Problem from '../models/Problem.js';
+
+const validateProblemPayload = ({ title, description, difficulty, testCases }) => {
+  if (!title?.trim() || !description?.trim()) return 'Title and description are required';
+  if (!['Easy', 'Medium', 'Hard'].includes(difficulty)) return 'Difficulty must be Easy, Medium, or Hard';
+  if (!Array.isArray(testCases) || testCases.length === 0) return 'At least one test case is required';
+  if (testCases.some((tc) => typeof tc.input !== 'string' || typeof tc.output !== 'string')) {
+    return 'Every test case must contain string input and output';
+  }
+  return null;
+};
+
 export const createProblem = async (req, res) => {
   try {
-    if (!req.user.isAdmin) {
-      return res.status(403).json({ message: 'Admin access required' });
-    }
+    if (!req.user.isAdmin) return res.status(403).json({ message: 'Admin access required' });
 
     const { title, description, difficulty, testCases, tags = [] } = req.body;
-    const problem = new Problem({
-      title,
+    const validationError = validateProblemPayload({ title, description, difficulty, testCases });
+    if (validationError) return res.status(400).json({ message: validationError });
+
+    const problem = await Problem.create({
+      title: title.trim(),
       description,
       difficulty,
-      testCases,
-      tags,
+      testCases: testCases.map((tc) => ({
+        input: tc.input,
+        output: tc.output,
+        hidden: Boolean(tc.hidden),
+      })),
+      tags: Array.isArray(tags) ? tags : [],
       createdBy: req.user.userId,
     });
-    await problem.save();
     res.status(201).json({ message: 'Problem created', problem });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Create problem error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Get all problems (authenticated users)
 export const getAllProblems = async (req, res) => {
   try {
     const problems = await Problem.find()
       .select('title description difficulty tags createdAt')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
     res.status(200).json(problems);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Get problems error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Get a single problem by ID (authenticated users)
 export const getProblem = async (req, res) => {
   try {
-    const problem = await Problem.findById(req.params.id).select('-testCases.hidden');
-    if (!problem) {
-      return res.status(404).json({ message: 'Problem not found' });
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ message: 'Invalid problem ID' });
     }
+
+    const problem = await Problem.findById(req.params.id).lean();
+    if (!problem) return res.status(404).json({ message: 'Problem not found' });
+
+    // Never expose hidden judge data to clients.
+    problem.testCases = (problem.testCases || []).filter((tc) => !tc.hidden).map(({ input, output }) => ({ input, output }));
     res.status(200).json(problem);
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Get problem error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Update a problem (admin only)
 export const updateProblem = async (req, res) => {
   try {
-    const { isAdmin } = req.user;
-    if (!isAdmin) {
-      return res.status(403).json({ message: 'Admin access required' });
-    }
+    if (!req.user.isAdmin) return res.status(403).json({ message: 'Admin access required' });
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid problem ID' });
 
     const { title, description, difficulty, testCases, tags } = req.body;
+    const validationError = validateProblemPayload({ title, description, difficulty, testCases });
+    if (validationError) return res.status(400).json({ message: validationError });
+
     const updateData = {
-      title,
+      title: title.trim(),
       description,
       difficulty,
-      testCases,
-      updatedAt: Date.now(),
+      testCases: testCases.map((tc) => ({ input: tc.input, output: tc.output, hidden: Boolean(tc.hidden) })),
+      ...(Array.isArray(tags) ? { tags } : {}),
+      updatedAt: new Date(),
     };
 
-    if (tags) updateData.tags = tags;
-
-    const problem = await Problem.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true } //Returns the new problem after the changes are applied
-    );
-    if (!problem) {
-      return res.status(404).json({ message: 'Problem not found' });
-    }
+    const problem = await Problem.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+    if (!problem) return res.status(404).json({ message: 'Problem not found' });
     res.status(200).json({ message: 'Problem updated', problem });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Update problem error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };
 
-// Delete a problem (admin only)
 export const deleteProblem = async (req, res) => {
   try {
-    const { isAdmin } = req.user;
-    if (!isAdmin) {
-      return res.status(403).json({ message: 'Admin access required' });
-    }
+    if (!req.user.isAdmin) return res.status(403).json({ message: 'Admin access required' });
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ message: 'Invalid problem ID' });
 
     const problem = await Problem.findByIdAndDelete(req.params.id);
-    if (!problem) {
-      return res.status(404).json({ message: 'Problem not found' });
-    }
+    if (!problem) return res.status(404).json({ message: 'Problem not found' });
     res.status(200).json({ message: 'Problem deleted' });
   } catch (error) {
-    res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('Delete problem error:', error);
+    res.status(500).json({ message: 'Server error' });
   }
 };

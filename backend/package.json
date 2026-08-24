@@ -1,14 +1,14 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "description": "",
+  "description": "AlgoVed backend API",
   "license": "ISC",
   "author": "",
   "type": "module",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon index.js"
   },
   "dependencies": {
     "amqplib": "^0.10.8",
@@ -26,7 +26,6 @@
     "morgan": "^1.10.1",
     "nodemon": "^3.1.10",
     "socket.io": "^4.8.1",
-    "socket.io-client": "^4.8.1",
     "socket.js": "^0.1.4",
     "uuid": "^11.1.0"
   }
