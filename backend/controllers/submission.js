@@ -16,7 +16,7 @@ export const createSubmission = async (req, res) => {
     if (typeof code !== 'string' || !code.trim()) return res.status(400).json({ message: 'Code is required' });
     if (code.length > 100_000) return res.status(413).json({ message: 'Code is too large' });
     if (typeof language !== 'string' || language !== 'cpp') return res.status(400).json({ message: 'Only C++ submissions are currently supported' });
-    if (!process.env.COMPILER_API_URL) return res.status(503).json({ message: 'Compiler service is not configured' });
+    if (!process.env.COMPILER_API_URL || !process.env.COMPILER_API_KEY) return res.status(503).json({ message: 'Compiler service is not configured' });
 
     const problem = await Problem.findById(problemId).lean();
     if (!problem) return res.status(404).json({ message: 'Problem not found' });
@@ -24,23 +24,32 @@ export const createSubmission = async (req, res) => {
       return res.status(422).json({ message: 'Problem has no test cases configured' });
     }
 
+    const compilerUrl = process.env.COMPILER_API_URL.replace(/\/$/, '');
+    const compilerHeaders = { 'x-compiler-key': process.env.COMPILER_API_KEY };
     const results = [];
+
     for (const tc of problem.testCases) {
       try {
-        const response = await axios.post(`${process.env.COMPILER_API_URL.replace(/\/$/, '')}/run`, {
+        const response = await axios.post(`${compilerUrl}/run`, {
           language,
           code,
           input: tc.input,
-        }, { timeout: 15_000, maxContentLength: 1_000_000, maxBodyLength: 1_000_000 });
+        }, {
+          headers: compilerHeaders,
+          timeout: 15_000,
+          maxContentLength: 1_000_000,
+          maxBodyLength: 1_000_000,
+        });
 
         const actualOutput = response.data?.output ?? '';
+        const passed = normalizeOutput(actualOutput) === normalizeOutput(tc.output);
         results.push({
           input: tc.input,
           expected: tc.output,
           actual: actualOutput,
-          passed: normalizeOutput(actualOutput) === normalizeOutput(tc.output),
+          passed,
           hidden: Boolean(tc.hidden),
-          status: normalizeOutput(actualOutput) === normalizeOutput(tc.output) ? 'Accepted' : 'Wrong Answer',
+          status: passed ? 'Accepted' : 'Wrong Answer',
         });
       } catch (err) {
         results.push({
@@ -49,16 +58,15 @@ export const createSubmission = async (req, res) => {
           actual: err.response?.data?.error || err.message,
           passed: false,
           hidden: Boolean(tc.hidden),
-          status: 'Error',
+          status: err.response?.status === 429 ? 'Busy' : 'Error',
         });
       }
 
-      // Stop early on a failed test case. Hidden tests remain on the server and are never returned to clients.
       if (!results[results.length - 1].passed) break;
     }
 
     const passedAll = results.length === problem.testCases.length && results.every((r) => r.passed);
-    const status = passedAll ? 'Accepted' : results.some((r) => r.status === 'Error') ? 'Error' : 'Wrong Answer';
+    const status = passedAll ? 'Accepted' : results.some((r) => r.status === 'Error' || r.status === 'Busy') ? 'Error' : 'Wrong Answer';
 
     const submission = await Submission.create({
       userId,
@@ -69,11 +77,8 @@ export const createSubmission = async (req, res) => {
       testCaseResults: results,
     });
 
-    // Never send hidden input/expected output back to the browser.
     const publicResults = results.map(({ input, expected, actual, passed, hidden, status: testStatus }) => (
-      hidden
-        ? { passed, status: testStatus }
-        : { input, expected, actual, passed, status: testStatus }
+      hidden ? { passed, status: testStatus } : { input, expected, actual, passed, status: testStatus }
     ));
 
     res.status(201).json({
