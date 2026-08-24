@@ -1,4 +1,4 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import getDirname from './getDirname.js';
@@ -11,17 +11,47 @@ if (!fs.existsSync(outputPath)) {
 }
 
 const ROOT_DIR = path.resolve(__dirname);
+const MAX_OUTPUT = 1024 * 1024;
 
 const sanitizePath = (filePath) => {
   const resolvedPath = path.resolve(filePath);
   const relative = path.relative(ROOT_DIR, resolvedPath);
-
   if (relative.startsWith('..') || path.isAbsolute(relative)) {
     throw new Error('Invalid file path');
   }
-
   return resolvedPath;
 };
+
+const runProcess = (command, args, { timeout, cwd, inputPath = null } = {}) => new Promise((resolve, reject) => {
+  const child = execFile(command, args, {
+    cwd,
+    timeout,
+    windowsHide: true,
+    maxBuffer: MAX_OUTPUT,
+    shell: false,
+    env: {
+      PATH: process.env.PATH,
+      ...(process.platform === 'win32' ? { SystemRoot: process.env.SystemRoot || 'C:\\Windows' } : {}),
+    },
+  }, (error, stdout, stderr) => {
+    if (error) {
+      const timedOut = error.killed || error.signal === 'SIGTERM' || error.code === 'ETIMEDOUT';
+      reject(new Error(timedOut ? 'Program execution timed out' : (stderr?.trim() || error.message)));
+      return;
+    }
+    if (stderr?.trim()) {
+      reject(new Error(stderr.trim()));
+      return;
+    }
+    resolve(stdout || '');
+  });
+
+  if (inputPath) {
+    const input = fs.createReadStream(inputPath);
+    input.on('error', (error) => child.kill());
+    input.pipe(child.stdin);
+  }
+});
 
 const executeCpp = (filepath, inputPath) => {
   const safeFilePath = sanitizePath(filepath);
@@ -31,36 +61,18 @@ const executeCpp = (filepath, inputPath) => {
   const executableExt = isWindows ? '.exe' : '.out';
   const executablePath = path.join(outputPath, `${jobId}${executableExt}`);
 
-  const compileCommand = `g++ "${safeFilePath}" -std=c++17 -O2 -pipe -o "${executablePath}"`;
-  const runCommand = `"${executablePath}" < "${safeInputPath}"`;
-
-  const execCommand = (command, timeout) => new Promise((resolve, reject) => {
-    exec(
-      command,
-      { timeout, maxBuffer: 1024 * 1024, windowsHide: true },
-      (error, stdout, stderr) => {
-        if (error) {
-          const message = error.killed
-            ? 'Program execution timed out'
-            : stderr?.trim() || error.message;
-          reject(new Error(message));
-          return;
-        }
-
-        if (stderr?.trim()) {
-          reject(new Error(stderr.trim()));
-          return;
-        }
-
-        resolve(stdout);
-      },
-    );
-  });
-
   return (async () => {
     try {
-      await execCommand(compileCommand, 10000);
-      return await execCommand(runCommand, 3000);
+      await runProcess('g++', [safeFilePath, '-std=c++17', '-O2', '-pipe', '-o', executablePath], {
+        timeout: 10000,
+        cwd: ROOT_DIR,
+      });
+
+      return await runProcess(executablePath, [], {
+        timeout: 3000,
+        cwd: ROOT_DIR,
+        inputPath: safeInputPath,
+      });
     } finally {
       for (const artifact of [safeFilePath, safeInputPath, executablePath]) {
         try {
