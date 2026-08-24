@@ -1,101 +1,48 @@
-'use client'; // This component must be a Client Component
+'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Editor, useMonaco } from '@monaco-editor/react';
+import { useEffect, useRef } from 'react';
+import { Editor } from '@monaco-editor/react';
 
-// You can define a map for display names of languages if needed
-const languageMap = {
-  cpp: 'cpp', // Monaco uses 'cpp' directly for C++
-  python: 'python',
-  javascript: 'javascript',
-  // Add other languages as needed, ensuring they match Monaco's language IDs
-  java: 'java',
-  typescript: 'typescript',
-  html: 'html',
-  css: 'css',
-  json: 'json'
-};
+const LANGUAGE = 'cpp';
 
-export default function MonacoCodeEditor({
-  code,
-  setCode,
-  language = 'cpp', // Default language
-  setLanguage, // Optional: if you want a language selector inside
-  readOnly = false,
-  // height = '600', // Default height
-}) {
+export default function MonacoCodeEditor({ code = '', setCode, language = LANGUAGE, setLanguage, readOnly = false, height = '100%' }) {
   const editorRef = useRef(null);
-  const monaco = useMonaco(); // Hook to access the monaco instance
+  const selectedLanguage = language === LANGUAGE ? LANGUAGE : LANGUAGE;
 
-  const [currentLanguage, setCurrentLanguage] = useState(language);
-
-  // Update internal language state if prop changes
   useEffect(() => {
-    setCurrentLanguage(language);
-  }, [language]);
-
-  function handleEditorDidMount(editor, monaco) {
-    editorRef.current = editor;
-    // You can perform additional setup here if needed
-    // For example, adding custom commands or actions
-  }
-
-  function handleEditorChange(value, event) {
-    // value is the current content of the editor
-    setCode?.(value); // Only call setCode if it's provided
-  }
-
-  // Optional: Function to handle language change if you have a selector
-  const handleLanguageChange = (e) => {
-    const newLang = e.target.value;
-    setCurrentLanguage(newLang);
-    setLanguage?.(newLang); // If setLanguage prop is provided
-  };
+    if (setLanguage && language !== LANGUAGE) setLanguage(LANGUAGE);
+  }, [language, setLanguage]);
 
   return (
-    <div className="border border-gray-700 rounded-lg overflow-hidden relative">
-      {/* Optional: Language selector */}
-      {!readOnly && setLanguage && ( // Only show if not readOnly and setLanguage prop is provided
-        <div className="bg-gray-800 text-white p-2 flex justify-end">
-          <select
-            value={currentLanguage}
-            onChange={handleLanguageChange}
-            className="bg-gray-700 text-sm px-2 py-1 rounded focus:outline-none"
-          >
-            {Object.entries(languageMap).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label.charAt(0).toUpperCase() + label.slice(1)} {/* Capitalize display name */}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-
-      <div className="bg-gray-900 text-white font-mono text-sm" style={{ height: 800 }}>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+      <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-3">
+        <span className="text-xs font-medium uppercase tracking-wide text-slate-400">C++</span>
+        <span className="text-xs text-slate-500">Ctrl/Cmd + S to save locally</span>
+      </div>
+      <div className="min-h-0 flex-1">
         <Editor
-          height="100%" // Editor takes 100% of its parent div's height
-          language={currentLanguage}
-          defaultValue={code} // Use defaultValue for initial value
-          value={code} // Use value for controlled component, so changes are reflected
-          theme="vs-dark" // Or 'light', 'hc-black'
-          onMount={handleEditorDidMount}
-          onChange={handleEditorChange}
+          height={height}
+          language={selectedLanguage}
+          value={code}
+          theme="vs-dark"
+          onMount={(editor) => { editorRef.current = editor; }}
+          onChange={(value) => setCode?.(value ?? '')}
           options={{
-            readOnly: readOnly,
-            minimap: { enabled: false }, // Disable minimap for cleaner look
-            lineNumbers: 'on', // Show line numbers
-            wordWrap: 'on', // Wrap long lines
-            scrollBeyondLastLine: false, // Don't allow scrolling past the last line
+            readOnly,
+            minimap: { enabled: false },
+            lineNumbers: 'on',
+            wordWrap: 'on',
+            scrollBeyondLastLine: false,
             fontSize: 14,
-            fontFamily: '"Fira Code", monospace', // Use your preferred font
-            automaticLayout: true, // Automatically resize editor when container changes
-            // You can add many more options here: https://microsoft.github.io/monaco-editor/api/interfaces/monaco.editor.IEditorOptions.html
+            fontFamily: 'Fira Code, Consolas, monospace',
+            automaticLayout: true,
+            tabSize: 4,
+            insertSpaces: true,
+            padding: { top: 12, bottom: 12 },
+            renderWhitespace: 'selection',
+            smoothScrolling: true,
           }}
-          // The `wrapperProps` are passed to the wrapper div around the editor
-          // You could potentially add Tailwind classes here if needed.
-          wrapperProps={{
-            className: 'w-full h-full'
-          }}
+          wrapperProps={{ className: 'h-full w-full' }}
         />
       </div>
     </div>
