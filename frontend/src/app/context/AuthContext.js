@@ -13,51 +13,81 @@ export function AuthProvider({ children }) {
   const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   useEffect(() => {
+    let mounted = true;
+
     const checkAuth = async () => {
+      const token = localStorage.getItem('token');
+
+      if (!token) {
+        if (mounted) {
+          setIsLoggedIn(false);
+          setIsAdmin(false);
+          setUser(null);
+          setAuthLoading(false);
+        }
+        return;
+      }
+
+      if (!API_URL) {
+        console.error('NEXT_PUBLIC_API_URL is not configured');
+        localStorage.removeItem('token');
+        if (mounted) {
+          setIsLoggedIn(false);
+          setIsAdmin(false);
+          setUser(null);
+          setAuthLoading(false);
+        }
+        return;
+      }
+
       try {
-        const token = localStorage.getItem('token');
-        if (token) {
-          const res = await axios.get(`${API_URL}/api/auth/me`, {
-            headers: { Authorization: `Bearer ${token}` },
-          });
-          setUser({ userId: res.data._id, username: res.data.username, ...res.data });
-          setIsLoggedIn(true);
-          setIsAdmin(res.data.isAdmin || false);
-        } else {
+        const res = await axios.get(`${API_URL}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!mounted) return;
+        setUser({ userId: res.data._id, username: res.data.username, ...res.data });
+        setIsLoggedIn(true);
+        setIsAdmin(Boolean(res.data.isAdmin));
+      } catch (error) {
+        console.error('Auth check error:', error.response?.data || error.message);
+        localStorage.removeItem('token');
+        if (mounted) {
           setIsLoggedIn(false);
           setIsAdmin(false);
           setUser(null);
         }
-      } catch (error) {
-        console.error('Auth check error:', error.response?.data || error.message);
-        setIsLoggedIn(false);
-        setIsAdmin(false);
-        setUser(null);
       } finally {
-        setAuthLoading(false);
+        if (mounted) setAuthLoading(false);
       }
     };
 
     checkAuth();
+    return () => {
+      mounted = false;
+    };
   }, [API_URL]);
 
-  const login = (token) => {
-    localStorage.setItem('token', token);
-    setIsLoggedIn(true);
+  const login = async (token) => {
+    if (!token || !API_URL) {
+      throw new Error('Authentication configuration is missing');
+    }
 
-    axios
-      .get(`${API_URL}/api/auth/me`, {
+    try {
+      const res = await axios.get(`${API_URL}/api/auth/me`, {
         headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((res) => {
-        setUser({ userId: res.data._id, username: res.data.username, ...res.data });
-        setIsAdmin(res.data.isAdmin || false);
-      })
-      .catch((error) => {
-        console.error('Login fetch error:', error.response?.data || error.message);
-        setUser(null);
-        setIsAdmin(false);
       });
+
+      localStorage.setItem('token', token);
+      setUser({ userId: res.data._id, username: res.data.username, ...res.data });
+      setIsLoggedIn(true);
+      setIsAdmin(Boolean(res.data.isAdmin));
+    } catch (error) {
+      localStorage.removeItem('token');
+      setIsLoggedIn(false);
+      setIsAdmin(false);
+      setUser(null);
+      throw error;
+    }
   };
 
   const logout = () => {
