@@ -1,70 +1,79 @@
-import {exec} from 'child_process'
-import fs from 'fs'
-import path from 'path'
+import { exec } from 'child_process';
+import fs from 'fs';
+import path from 'path';
 import getDirname from './getDirname.js';
 
 const __dirname = getDirname(import.meta.url);
-const outputPath = path.join(__dirname, "outputs");
+const outputPath = path.join(__dirname, 'outputs');
 
 if (!fs.existsSync(outputPath)) {
   fs.mkdirSync(outputPath, { recursive: true });
 }
 
+const ROOT_DIR = path.resolve(__dirname);
+
 const sanitizePath = (filePath) => {
-    const resolvedPath = path.resolve(filePath);
-    if (!resolvedPath.startsWith(path.resolve(__dirname))) {
-        throw new Error("Invalid file path");
-    }
-    return resolvedPath;
+  const resolvedPath = path.resolve(filePath);
+  const relative = path.relative(ROOT_DIR, resolvedPath);
+
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    throw new Error('Invalid file path');
+  }
+
+  return resolvedPath;
 };
 
 const executeCpp = (filepath, inputPath) => {
-    const jobId = path.basename(filepath).split(".")[0];
-    const isWindows = process.platform === 'win32';
-    const executableExt = isWindows ? '.exe' : '.out';
-    const executableName = isWindows ? `${jobId}.exe` : `./${jobId}.out`;
-    const outPath = path.join(outputPath, `${jobId}${executableExt}`);
+  const safeFilePath = sanitizePath(filepath);
+  const safeInputPath = sanitizePath(inputPath);
+  const jobId = path.basename(safeFilePath, path.extname(safeFilePath));
+  const isWindows = process.platform === 'win32';
+  const executableExt = isWindows ? '.exe' : '.out';
+  const executablePath = path.join(outputPath, `${jobId}${executableExt}`);
+  const executableCommand = isWindows ? `"${executablePath}"` : `"${executablePath}"`;
 
-    // Sanitize paths
-    const safeFilePath = sanitizePath(filepath);
-    const safeInputPath = sanitizePath(inputPath);
+  const compileCommand = `g++ "${safeFilePath}" -std=c++17 -O2 -pipe -o "${executablePath}"`;
+  const runCommand = `${executableCommand} < "${safeInputPath}"`;
 
-    /*
-    🔐 Advantages:
-        Sanitizes paths
+  const execCommand = (command, timeout) => new Promise((resolve, reject) => {
+    exec(
+      command,
+      {
+        timeout,
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        if (error) {
+          const message = error.killed
+            ? 'Program execution timed out'
+            : stderr?.trim() || error.message;
+          reject(new Error(message));
+          return;
+        }
 
-        const sanitizePath = (filePath) => {
-            const resolvedPath = path.resolve(filePath);
-            if (!resolvedPath.startsWith(path.resolve(__dirname))) {
-                throw new Error("Invalid file path");
-            }
-            return resolvedPath;
-        };
-        Prevents directory traversal attacks.
+        if (stderr?.trim()) {
+          reject(new Error(stderr.trim()));
+          return;
+        }
 
-        Ensures that the filepath and inputPath stay within your project directory.
+        resolve(stdout);
+      },
+    );
+  });
 
-        Uses path.resolve() to normalize file paths and make sure they're absolute.
-
-        Wraps paths in double quotes in the exec() command:
-
-        exec(
-            `g++ "${safeFilePath}" -o "${outPath}" && cd "${outputPath}" && ./${jobId}.out < "${safeInputPath}"`,
-        This prevents issues with paths that contain spaces or special characters.
-    */
-
-    const command = `g++ "${safeFilePath}" -o "${outPath}" && cd "${outputPath}" && ${executableName} < "${safeInputPath}"`;
-
-    return new Promise((resolve, reject) => {
-        exec(command,(error, stdout, stderr) => {
-                if (error || stderr) {
-                    reject(new Error(stderr || error.message));
-                } else {
-                    resolve(stdout);
-                }
-            }
-        );
-    });
+  return (async () => {
+    try {
+      await execCommand(compileCommand, 10000);
+      return await execCommand(runCommand, 3000);
+    } finally {
+      try {
+        if (fs.existsSync(executablePath)) fs.rmSync(executablePath, { force: true });
+      } catch (cleanupError) {
+        console.warn('Failed to clean compiled executable:', cleanupError.message);
+      }
+    }
+  })();
 };
 
 export default executeCpp;
