@@ -1,30 +1,31 @@
 import Link from 'next/link';
-import { motion } from 'framer-motion';
 
 export default function ProblemCard({ problem }) {
-  return (
-    <motion.div
-      initial={{ opacity: 0, scale: 0.95 }}
-      whileInView={{ opacity: 1, scale: 1 }}
-      viewport={{ once: true }}
-      transition={{ duration: 0.4 }}
-      className="bg-white dark:bg-gray-900 p-4 rounded-xl shadow-md hover:shadow-lg transition-shadow"
-    >
-      {/* Card Content */}
-      <Link href={`/problems/${problem._id}`} className="block">
-        <div className="bg-white dark:bg-gray-900 p-5 rounded-lg shadow hover:shadow-xl transition duration-300 border border-gray-200 dark:border-gray-700">
-          <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{problem.title}</h2>
-          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">Difficulty: <span className={`font-medium ${problem.difficulty === 'Hard' ? 'text-red-500' : problem.difficulty === 'Medium' ? 'text-yellow-500' : 'text-green-500'}`}>{problem.difficulty}</span></p>
-          <div className="flex flex-wrap gap-2 mt-3">
-            {problem.tags.map((tag, index) => (
-              <span key={index} className="bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-100 text-xs px-2 py-1 rounded-full">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </div>
-      </Link>
-    </motion.div>
+  const tags = Array.isArray(problem?.tags) ? problem.tags : [];
+  const difficulty = problem?.difficulty || 'Unknown';
+  const difficultyClass = difficulty === 'Hard'
+    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+    : difficulty === 'Medium'
+      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+      : difficulty === 'Easy'
+        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+        : 'border-slate-700 bg-slate-800 text-slate-300';
 
+  return (
+    <Link href={`/problems/${problem?._id || problem?.id}`} className="group block h-full rounded-xl border border-slate-800 bg-slate-900 p-5 transition-colors hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-950">
+      <div className="flex h-full flex-col">
+        <div className="flex items-start justify-between gap-3">
+          <h2 className="min-w-0 text-base font-semibold leading-6 text-slate-100 group-hover:text-blue-300">{problem?.title || 'Untitled problem'}</h2>
+          <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${difficultyClass}`}>{difficulty}</span>
+        </div>
+        <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">{problem?.description || 'Practice this problem and improve your problem-solving skills.'}</p>
+        <div className="mt-auto flex flex-wrap gap-1.5 pt-5">
+          {tags.slice(0, 4).map((tag) => (
+            <span key={tag} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-400">{tag}</span>
+          ))}
+          {tags.length > 4 && <span className="px-1 py-1 text-xs text-slate-500">+{tags.length - 4}</span>}
+        </div>
+      </div>
+    </Link>
   );
 }
