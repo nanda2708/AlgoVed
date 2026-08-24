@@ -1,75 +1,86 @@
 'use client';
+
 import Link from 'next/link';
-import Image from 'next/image';
+
+const features = [
+  {
+    title: 'Practice',
+    text: 'Work through problems at your own pace with clear statements, examples, and submissions.',
+    href: '/problems',
+  },
+  {
+    title: 'Compete',
+    text: 'Take part in contests, compare scores, and see how you stack up on the leaderboard.',
+    href: '/compete',
+  },
+  {
+    title: 'Code together',
+    text: 'Open a room and solve problems with other people in real time.',
+    href: '/rooms',
+  },
+];
 
 export default function Home() {
   return (
-    <div className="relative min-h-screen bg-slate-950 text-white overflow-hidden">
-      {/* Grid Pattern Background */}
-      <div className="absolute inset-0 z-0">
-        <div className="relative h-full w-full [&>div]:absolute [&>div]:inset-0 [&>div]:bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] [&>div]:bg-[size:14px_24px]">
-          <div></div>
-        </div>
-      </div>
-
-      <main className="relative z-10 max-w-7xl mx-auto px-4 py-20 text-center">
-        <h1 className="text-5xl sm:text-6xl font-bold tracking-tight mb-6 animate-fade-in">
-          Welcome to <span className="text-sky-400">Online Judge</span>
-        </h1>
-        <p className="text-lg sm:text-xl text-slate-300 max-w-2xl mx-auto mb-8 animate-fade-in-delay">
-          Master coding through competitive programming, real-time battles, and tailored problem-solving practice.
-        </p>
-        <Link href="/problems">
-          <button className="bg-sky-400 hover:bg-sky-300 text-slate-900 font-semibold px-6 py-3 rounded-lg transition-all duration-200 shadow-md">
-            Start Coding
-          </button>
-        </Link>
-
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-6 mt-16 animate-slide-up">
-          <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700">
-            <h2 className="text-2xl font-semibold text-sky-400 mb-2">Compete</h2>
-            <p className="text-slate-300">Join real-time coding contests with your friends and rivals.</p>
+    <div className="bg-coding-dark">
+      <section className="border-b border-slate-800">
+        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.15fr_.85fr] lg:items-center lg:px-8 lg:py-24">
+          <div>
+            <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-blue-400">Competitive programming, without the clutter</p>
+            <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Learn algorithms. Write code. Get better.
+            </h1>
+            <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
+              AlgoVed gives you one practical place to practice programming problems, enter contests, run C++ code, and work with other developers.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/problems" className="rounded-md bg-blue-500 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-400">
+                Browse problems
+              </Link>
+              <Link href="/compiler" className="rounded-md border border-slate-700 px-5 py-3 text-center text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900">
+                Open compiler
+              </Link>
+            </div>
           </div>
-          <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700">
-            <h2 className="text-2xl font-semibold text-sky-400 mb-2">Practice</h2>
-            <p className="text-slate-300">Solve curated problems, test with edge cases, and sharpen your skills.</p>
-          </div>
-          <div className="bg-slate-800 p-6 rounded-2xl shadow-lg border border-slate-700">
-            <h2 className="text-2xl font-semibold text-sky-400 mb-2">Track</h2>
-            <p className="text-slate-300">Visualize your streaks, achievements, and growth over time.</p>
-          </div>
-        </section>
 
-        {/* About & Acknowledgements */}
-        {/* <section className="mt-20 max-w-3xl mx-auto text-center animate-fade-in-delay">
-          <h3 className="text-3xl font-bold mb-4">About this Project</h3>
-          <p className="text-slate-400">
-            This platform was built as part of the SWE Co-Op Internship at <span className="text-white font-medium">AlgoUniversity</span>.
-            I sincerely thank my mentors for their invaluable guidance, feedback, and constant support throughout this journey.
-          </p>
-
-          <div className="flex justify-center gap-8 mt-10">
-            {[
-              { name: 'Bhavesh Garg', img: '/mentors/bhavesh.jpg' },
-              { name: 'Kanti Kiran', img: '/mentors/kanti.jpg' },
-              { name: 'Ashutosh Shrivastav', img: '/mentors/shutosh.jpg' },
-            ].map((mentor) => (
-              <div key={mentor.name} className="flex flex-col items-center">
-                <div className="w-24 h-24 rounded-full overflow-hidden border-2 border-sky-400 shadow-md">
-                  <Image
-                    src={mentor.img}
-                    alt={mentor.name}
-                    width={96}
-                    height={96}
-                    className="object-cover w-full h-full"
-                  />
-                </div>
-                <p className="mt-2 text-slate-200 text-sm">{mentor.name}</p>
+          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-xl sm:p-6">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">AlgoVed</p>
+                <p className="mt-1 font-semibold text-white">A focused coding workspace</p>
               </div>
-            ))}
+              <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-400">Ready to code</span>
+            </div>
+            <div className="space-y-3 py-5 font-mono text-sm">
+              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">01&nbsp;&nbsp; #include &lt;iostream&gt;</div>
+              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">02&nbsp;&nbsp; int main() {'{'}</div>
+              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">03&nbsp;&nbsp;&nbsp;&nbsp; cout &lt;&lt; "Hello, AlgoVed";</div>
+              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">04&nbsp;&nbsp; {'}'}</div>
+            </div>
+            <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs text-slate-500">
+              <span>C++</span>
+              <span>Compile &amp; run</span>
+            </div>
           </div>
-        </section> */}
-      </main>
+        </div>
+      </section>
+
+      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
+        <div className="max-w-2xl">
+          <p className="text-sm font-semibold text-blue-400">Everything you need</p>
+          <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Practice the way you actually code.</h2>
+          <p className="mt-3 text-slate-400">No unnecessary dashboards or decorative clutter. Just the tools you need to solve and improve.</p>
+        </div>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          {features.map((feature) => (
+            <Link key={feature.title} href={feature.href} className="group rounded-xl border border-slate-800 bg-slate-900 p-6 transition hover:-translate-y-0.5 hover:border-slate-700 hover:bg-slate-[950]">
+              <h3 className="text-lg font-semibold text-white">{feature.title}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-400">{feature.text}</p>
+              <span className="mt-5 inline-block text-sm font-medium text-blue-400 group-hover:text-blue-300">Explore →</span>
+            </Link>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
