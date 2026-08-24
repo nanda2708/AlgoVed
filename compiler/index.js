@@ -1,56 +1,75 @@
-import express from 'express'
-import cors from 'cors'
-import dotenv from 'dotenv'
-import generateFile from './generateFile.js'
-import generateInputFile from './generateInputFile.js'
-import executeCpp from './executeCpp.js'
-import aiCodeReview from './aiCodeReview.js'
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import generateFile from './generateFile.js';
+import generateInputFile from './generateInputFile.js';
+import executeCpp from './executeCpp.js';
+import aiCodeReview from './aiCodeReview.js';
 
-const app = express();
 dotenv.config();
 
-// Middlewares
-app.use(cors());
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+const app = express();
+const PORT = Number(process.env.PORT) || 8000;
 
-app.get("/", (req, res) => {
-    res.json({ online: 'compiler' });
+app.use(cors({
+  origin: process.env.NEXT_PUBLIC_CLIENT_URL || 'http://localhost:3000',
+}));
+app.use(express.json({ limit: '256kb' }));
+
+app.get('/', (req, res) => {
+  res.status(200).json({ online: true, service: 'compiler' });
 });
 
-app.post("/run", async (req, res) => {
-    const { language = 'cpp', code, input = '' } = req.body;
-    if (!code) {
-        return res.status(400).json({ success: false, error: "Empty code!" });
-    }
-    try {
-        const filePath = await generateFile(language, code);
-        const inputPath = await generateInputFile(input);
-        const output = await executeCpp(filePath, inputPath);
-        res.json({ filePath, inputPath, output });
-    } catch (error) {
-        res.status(500).json({ error: `Execution error: ${error.message}` });
-    }
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK', service: 'compiler' });
 });
 
-app.post("/ai-review", async (req, res) => {
+app.post('/run', async (req, res) => {
+  const { language = 'cpp', code, input = '' } = req.body;
+
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ success: false, error: 'Empty code!' });
+  }
+
+  if (code.length > 100_000) {
+    return res.status(413).json({ success: false, error: 'Code is too large.' });
+  }
+
+  if (typeof input !== 'string' || input.length > 100_000) {
+    return res.status(413).json({ success: false, error: 'Input is too large.' });
+  }
+
+  try {
+    const filePath = await generateFile(language, code);
+    const inputPath = await generateInputFile(input);
+    const output = await executeCpp(filePath, inputPath);
+    return res.json({ success: true, output });
+  } catch (error) {
+    console.error('Compiler execution error:', error.message);
+    return res.status(400).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/ai-review', async (req, res) => {
   const { code } = req.body;
-  if (!code) {
-    return res.status(400).json({ success: false, error: "Empty code!" });
+
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ success: false, error: 'Empty code!' });
+  }
+
+  if (code.length > 100_000) {
+    return res.status(413).json({ success: false, error: 'Code is too large.' });
   }
 
   try {
     const review = await aiCodeReview(code);
-    console.log("AI Review Success:", review);
-    res.json({ review });
+    return res.json({ success: true, review });
   } catch (error) {
-    console.error("AI Review Error:", error);
-    res.status(500).json({ error: error.message || "AI Review Failed" });
+    console.error('AI review error:', error.message);
+    return res.status(503).json({ success: false, error: error.message || 'AI Review Failed' });
   }
 });
 
-
-const PORT = process.env.PORT || 8000;
 app.listen(PORT, () => {
-    console.log(`Compiler server listening on port ${PORT}!`);
+  console.log(`Compiler server listening on port ${PORT}`);
 });
