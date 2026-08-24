@@ -10,10 +10,10 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8000;
+const CLIENT_URL = process.env.NEXT_PUBLIC_CLIENT_URL || 'http://localhost:3000';
 
-app.use(cors({
-  origin: process.env.NEXT_PUBLIC_CLIENT_URL || 'http://localhost:3000',
-}));
+app.disable('x-powered-by');
+app.use(cors({ origin: CLIENT_URL }));
 app.use(express.json({ limit: '256kb' }));
 
 app.get('/', (req, res) => {
@@ -25,16 +25,17 @@ app.get('/health', (req, res) => {
 });
 
 app.post('/run', async (req, res) => {
-  const { language = 'cpp', code, input = '' } = req.body;
+  const { language = 'cpp', code, input = '' } = req.body || {};
 
-  if (!code || typeof code !== 'string') {
-    return res.status(400).json({ success: false, error: 'Empty code!' });
+  if (language !== 'cpp') {
+    return res.status(400).json({ success: false, error: 'Only C++ execution is currently supported.' });
   }
-
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ success: false, error: 'Empty code.' });
+  }
   if (code.length > 100_000) {
     return res.status(413).json({ success: false, error: 'Code is too large.' });
   }
-
   if (typeof input !== 'string' || input.length > 100_000) {
     return res.status(413).json({ success: false, error: 'Input is too large.' });
   }
@@ -43,20 +44,18 @@ app.post('/run', async (req, res) => {
     const filePath = await generateFile(language, code);
     const inputPath = await generateInputFile(input);
     const output = await executeCpp(filePath, inputPath);
-    return res.json({ success: true, output });
+    return res.json({ success: true, output: output ?? '' });
   } catch (error) {
     console.error('Compiler execution error:', error.message);
-    return res.status(400).json({ success: false, error: error.message });
+    return res.status(400).json({ success: false, error: error.message || 'Compilation or execution failed.' });
   }
 });
 
 app.post('/ai-review', async (req, res) => {
-  const { code } = req.body;
-
+  const { code } = req.body || {};
   if (!code || typeof code !== 'string') {
-    return res.status(400).json({ success: false, error: 'Empty code!' });
+    return res.status(400).json({ success: false, error: 'Empty code.' });
   }
-
   if (code.length > 100_000) {
     return res.status(413).json({ success: false, error: 'Code is too large.' });
   }
@@ -70,6 +69,4 @@ app.post('/ai-review', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Compiler server listening on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Compiler server listening on port ${PORT}`));
