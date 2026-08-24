@@ -30,19 +30,14 @@ const executeCpp = (filepath, inputPath) => {
   const isWindows = process.platform === 'win32';
   const executableExt = isWindows ? '.exe' : '.out';
   const executablePath = path.join(outputPath, `${jobId}${executableExt}`);
-  const executableCommand = isWindows ? `"${executablePath}"` : `"${executablePath}"`;
 
   const compileCommand = `g++ "${safeFilePath}" -std=c++17 -O2 -pipe -o "${executablePath}"`;
-  const runCommand = `${executableCommand} < "${safeInputPath}"`;
+  const runCommand = `"${executablePath}" < "${safeInputPath}"`;
 
   const execCommand = (command, timeout) => new Promise((resolve, reject) => {
     exec(
       command,
-      {
-        timeout,
-        maxBuffer: 1024 * 1024,
-        windowsHide: true,
-      },
+      { timeout, maxBuffer: 1024 * 1024, windowsHide: true },
       (error, stdout, stderr) => {
         if (error) {
           const message = error.killed
@@ -67,10 +62,12 @@ const executeCpp = (filepath, inputPath) => {
       await execCommand(compileCommand, 10000);
       return await execCommand(runCommand, 3000);
     } finally {
-      try {
-        if (fs.existsSync(executablePath)) fs.rmSync(executablePath, { force: true });
-      } catch (cleanupError) {
-        console.warn('Failed to clean compiled executable:', cleanupError.message);
+      for (const artifact of [safeFilePath, safeInputPath, executablePath]) {
+        try {
+          if (fs.existsSync(artifact)) fs.rmSync(artifact, { force: true });
+        } catch (cleanupError) {
+          console.warn(`Failed to clean compiler artifact ${artifact}:`, cleanupError.message);
+        }
       }
     }
   })();
