@@ -23,7 +23,6 @@ jobs:
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:5000
-          NEXT_PUBLIC_COMPILER_API_URL: http://localhost:8000
           NEXT_PUBLIC_CLIENT_URL: http://localhost:3000
 
   backend:
@@ -42,6 +41,8 @@ jobs:
       - run: node --check index.js
       - run: node --check config/db.js
       - run: node --check controllers/submission.js
+      - run: node --check controllers/compiler.js
+      - run: node --check controllers/contestSubmissions.js
 
   compiler:
     runs-on: ubuntu-latest
