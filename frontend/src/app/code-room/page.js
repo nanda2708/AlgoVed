@@ -1,331 +1,168 @@
 'use client';
-import { useState, useEffect, useContext, useRef, Suspense } from 'react';
+
+import { useEffect, useMemo, useState, useContext, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import dynamicImport from 'next/dynamic';
+import dynamic from 'next/dynamic';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext.js';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FaSpinner } from 'react-icons/fa';
 
-// Dynamically import MonacoCodeEditor to avoid SSR issues
-const MonacoCodeEditor = dynamicImport(() => import('../components/MonacoCodeEditor.jsx'), { ssr: false });
+const MonacoCodeEditor = dynamic(() => import('../components/MonacoCodeEditor.jsx'), { ssr: false });
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const DEFAULT_CODE = '// Start coding here';
 
-const CodeRoomPage = () => {
+function CodeRoom() {
   const { user, isLoggedIn, authLoading } = useContext(AuthContext);
-  const [socket, setSocket] = useState(null);
-  const [code, setCode] = useState('// Start coding here');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const roomId = searchParams.get('roomId');
+  const socketRef = useRef(null);
+  const [token, setToken] = useState(null);
+  const [code, setCode] = useState(DEFAULT_CODE);
   const [language, setLanguage] = useState('cpp');
   const [input, setInput] = useState('');
   const [output, setOutput] = useState('');
   const [outputError, setOutputError] = useState('');
   const [users, setUsers] = useState([]);
   const [error, setError] = useState('');
-  const [token, setToken] = useState(null);
-  const [loadingRun, setLoadingRun] = useState(false);
-  const [loadingRoom, setLoadingRoom] = useState(true);
-  const [panelWidth, setPanelWidth] = useState(70);
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  const containerRef = useRef(null);
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
 
-  const roomId = searchParams.get('roomId');
+  const userLabel = useMemo(() => user?.username || 'You', [user]);
 
-  // Get token on client-side
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const storedToken = localStorage.getItem('token');
-      setToken(storedToken);
-    }
+    setToken(typeof window !== 'undefined' ? localStorage.getItem('token') : null);
   }, []);
 
-  // Redirect if not logged in or no roomId
   useEffect(() => {
-    if (!authLoading && !isLoggedIn) {
-      router.push('/login');
-    }
-    if (!roomId) {
-      setError('No room ID provided');
-      setLoadingRoom(false);
-    }
+    if (authLoading) return;
+    if (!isLoggedIn) { router.replace('/login'); return; }
+    if (!roomId) { setError('No room ID provided.'); setLoading(false); }
   }, [authLoading, isLoggedIn, roomId, router]);
 
-  // Initialize Socket.IO
   useEffect(() => {
-    if (!isLoggedIn || !user || !roomId || !token) return;
-
-    const newSocket = io(process.env.NEXT_PUBLIC_API_URL, {
+    if (authLoading || !isLoggedIn || !roomId || !token) return undefined;
+    let cancelled = false;
+    const socket = io(API_URL, {
       auth: { token },
-      query: { userId: user.userId, username: user.username },
       transports: ['websocket', 'polling'],
+      reconnection: true,
+      reconnectionAttempts: 5,
     });
+    socketRef.current = socket;
 
-    setSocket(newSocket);
-
-    newSocket.on('connect', () => {
-      console.log('Socket connected, userId:', user.userId);
-      newSocket.emit('joinRoom', { roomId, userId: user.userId, username: user.username });
-    });
-
-    newSocket.on('roomJoined', (data) => {
-      console.log('Room joined:', data);
-      setCode(data.code || '// Start coding here');
-      setLanguage(data.language || 'cpp');
+    const fail = (message) => { if (!cancelled) { setError(typeof message === 'string' ? message : 'Room connection failed'); setLoading(false); } };
+    socket.on('connect', () => socket.emit('joinRoom', { roomId, username: userLabel }));
+    socket.on('roomJoined', (data) => {
+      if (cancelled) return;
+      setCode(data.code || DEFAULT_CODE);
+      setLanguage(data.language === 'cpp' ? 'cpp' : 'cpp');
       setInput(data.input || '');
-      setUsers(data.users || []);
-      setLoadingRoom(false);
+      setUsers(Array.isArray(data.users) ? data.users : []);
+      setLoading(false);
+      setError('');
     });
-
-    newSocket.on('userJoined', (data) => {
-      console.log('User joined:', data);
-      setUsers((prev) => [...new Set([...prev, data.userId])]);
+    socket.on('userJoined', (data) => {
+      if (data?.userId) setUsers((prev) => prev.includes(data.userId) ? prev : [...prev, data.userId]);
     });
-
-    newSocket.on('codeUpdate', (data) => {
-      console.log('Code update received:', data);
-      setCode(data.code);
-      setLanguage(data.language);
+    socket.on('codeUpdate', (data) => {
+      if (!data || data.roomId !== roomId) return;
+      setCode(typeof data.code === 'string' ? data.code : DEFAULT_CODE);
+      setLanguage('cpp');
     });
-
-    newSocket.on('error', (error) => {
-      console.error('Socket error:', error);
-      setError(error);
-      setLoadingRoom(false);
+    socket.on('inputUpdate', (data) => {
+      if (data?.roomId === roomId && typeof data.input === 'string') setInput(data.input);
     });
-
-    newSocket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error.message);
-      setError('Failed to connect to server');
-      setLoadingRoom(false);
-    });
+    socket.on('error', fail);
+    socket.on('connect_error', () => fail('Unable to connect to the code room.'));
+    socket.on('disconnect', (reason) => { if (reason === 'io server disconnect') fail('Your room connection was closed by the server.'); });
 
     return () => {
-      newSocket.disconnect();
-      console.log('Socket disconnected');
+      cancelled = true;
+      socket.removeAllListeners();
+      socket.disconnect();
+      if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [roomId, token, user, isLoggedIn]);
+  }, [authLoading, isLoggedIn, roomId, token, userLabel]);
 
-  // Fetch room details
   useEffect(() => {
-    if (!isLoggedIn || !roomId || !token) return;
+    if (authLoading || !isLoggedIn || !roomId || !token) return undefined;
+    const controller = new AbortController();
+    axios.get(`${API_URL}/api/coding-room/${encodeURIComponent(roomId)}`, {
+      headers: { Authorization: `Bearer ${token}` }, signal: controller.signal, timeout: 10000,
+    }).then(({ data }) => {
+      if (socketRef.current?.connected) return;
+      setCode(data.code || DEFAULT_CODE);
+      setLanguage('cpp');
+      setInput(data.input || '');
+      setUsers(Array.isArray(data.users) ? data.users : []);
+      setLoading(false);
+    }).catch((err) => {
+      if (err.code === 'ERR_CANCELED') return;
+      setError(err.response?.data?.message || 'Failed to load room.');
+      setLoading(false);
+    });
+    return () => controller.abort();
+  }, [authLoading, isLoggedIn, roomId, token]);
 
-    const fetchRoom = async () => {
-      try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/coding-room/${roomId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        console.log('Room fetched:', response.data);
-        setCode(response.data.code || '// Start coding here');
-        setLanguage(response.data.language || 'cpp');
-        setInput(response.data.input || '');
-        setUsers(response.data.users || []);
-        setLoadingRoom(false);
-      } catch (err) {
-        setError(err.response?.data?.message || 'Failed to fetch room');
-        console.error('Fetch room error:', err);
-        setLoadingRoom(false);
-      }
-    };
-    fetchRoom();
-  }, [roomId, token, isLoggedIn]);
-
-  // Force editor re-render for semantic highlighting
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setLanguage((prev) => prev);
-      if (window.monaco) {
-        window.monaco.editor.getModels().forEach((model) => {
-          window.monaco.editor.setModelLanguage(model, language);
-        });
-      }
-    }, 100);
-    return () => clearTimeout(timer);
-  }, [language]);
-
-  // Handle code changes
-  const handleCodeChange = (newCode) => {
-    setCode(newCode);
-    if (socket) {
-      socket.emit('codeUpdate', { roomId, code: newCode, language });
-      console.log('Emitted codeUpdate:', { roomId, code: newCode, language });
-    }
+  const emitUpdate = (event, payload) => {
+    const socket = socketRef.current;
+    if (!socket?.connected) { setError('Room connection is unavailable.'); return false; }
+    socket.emit(event, payload);
+    return true;
   };
 
-  // Handle language change
-  const handleLanguageChange = (newLanguage) => {
-    setLanguage(newLanguage);
-    if (socket) {
-      socket.emit('codeUpdate', { roomId, code, language: newLanguage });
-      console.log('Emitted codeUpdate:', { roomId, code, language: newLanguage });
-    }
+  const handleCodeChange = (nextCode) => {
+    setCode(nextCode);
+    emitUpdate('codeUpdate', { roomId, code: nextCode, language: 'cpp' });
   };
 
-  // Run code
-  const handleRunCode = async () => {
-    setError('');
-    setOutput('');
-    setOutputError('');
-    setLoadingRun(true);
+  const handleInputChange = (nextInput) => {
+    setInput(nextInput);
+    emitUpdate('inputUpdate', { roomId, input: nextInput });
+  };
+
+  const handleRun = async () => {
+    setError(''); setOutput(''); setOutputError(''); setRunning(true);
     try {
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_COMPILER_API_URL}/run`,
-        { language, code, input },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      console.log('Run code response:', response.data);
-      setOutput(response.data.output || '');
-      setOutputError(response.data.error || '');
+      const res = await axios.post(`${API_URL}/api/compiler/run`, { language: 'cpp', code, input }, {
+        headers: { Authorization: `Bearer ${token}` }, timeout: 20000,
+      });
+      setOutput(res.data?.output || '');
+      setOutputError(res.data?.error || '');
     } catch (err) {
-      console.error('Run code error:', err);
-      setOutputError(err.response?.data?.error || 'Failed to run code');
-    } finally {
-      setLoadingRun(false);
-    }
+      setOutputError(err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to run code');
+    } finally { setRunning(false); }
   };
 
-  if (authLoading || loadingRoom) {
-    return (
-      <div className="flex items-center justify-center h-screen text-slate-300 bg-gradient-to-br from-slate-900 to-slate-800">
-        <FaSpinner className="animate-spin mr-2" /> Loading Code Room...
-      </div>
-    );
-  }
-
-  if (!isLoggedIn || !roomId) {
-    return null; // Redirect handled by useEffect
-  }
+  if (authLoading || loading) return <main className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-300">Loading code room…</main>;
+  if (!isLoggedIn || !roomId) return null;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-gradient-to-br from-slate-900 to-slate-800 font-sans text-slate-200" ref={containerRef}>
-      <div className="flex h-full w-full p-4">
-        {/* Left Panel: Code Editor */}
-        <motion.div
-          className="flex flex-col h-full bg-slate-800 rounded-lg shadow-lg"
-          style={{ width: `${panelWidth}%` }}
-          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-        >
-          <h2 className="text-xl font-semibold p-4 text-white">Code Editor</h2>
-          <div className="flex-1 rounded-lg overflow-hidden border border-slate-700 m-4">
-            <MonacoCodeEditor
-              code={code}
-              setCode={handleCodeChange}
-              language={language}
-              setLanguage={handleLanguageChange}
-              height="100%"
-            />
-          </div>
-          <div className="flex justify-end gap-2 p-4">
-            <motion.button
-              onClick={handleRunCode}
-              disabled={loadingRun}
-              className="bg-green-500 text-white py-2 px-6 rounded-lg hover:bg-green-600 disabled:bg-green-300 transition-colors duration-200 flex items-center gap-2"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {loadingRun && <FaSpinner className="animate-spin" />}
-              Run Code
-            </motion.button>
-          </div>
-        </motion.div>
-
-        {/* Right Panel: Input/Output */}
-        <div className="flex flex-col h-full" style={{ width: `${100 - panelWidth}%` }}>
-          <div className="flex justify-end gap-2 p-2 bg-slate-700 border-b border-slate-600">
-            <motion.button
-              onClick={() => setPanelWidth(Math.max(30, panelWidth - 10))}
-              className="px-3 py-1 text-xs bg-slate-600 text-slate-200 rounded hover:bg-slate-500 transition-colors"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              ← Expand Editor
-            </motion.button>
-            <motion.button
-              onClick={() => setPanelWidth(Math.min(90, panelWidth + 10))}
-              className="px-3 py-1 text-xs bg-slate-600 text-slate-200 rounded hover:bg-slate-500 transition-colors"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Expand Input/Output →
-            </motion.button>
-          </div>
-          <div className="flex-1 p-4 overflow-y-auto">
-            <h2 className="text-xl font-semibold mb-4 text-white">Input</h2>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              className="w-full h-1/3 bg-slate-800 text-slate-200 border-slate-600 border p-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm mb-4"
-              placeholder="Enter custom input..."
-              aria-label="Custom Input"
-            />
-            <h2 className="text-xl font-semibold mb-4 text-white">Output</h2>
-            <div className="w-full h-1/3 bg-slate-800 text-slate-200 border-slate-600 border p-4 rounded-lg overflow-auto font-mono text-sm">
-              {outputError && (
-                <motion.p
-                  className="text-red-400"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {outputError}
-                </motion.p>
-              )}
-              {output && (
-                <motion.pre
-                  className="text-slate-200 whitespace-pre-wrap"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  {output}
-                </motion.pre>
-              )}
-              {!output && !outputError && (
-                <p className="text-slate-400">Run code to see output...</p>
-              )}
-            </div>
-          </div>
+    <main className="min-h-[calc(100vh-64px)] bg-slate-950 text-slate-200">
+      <header className="border-b border-slate-800 bg-slate-900 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3">
+          <div><h1 className="text-lg font-semibold text-white">Code Room</h1><p className="text-xs text-slate-500">Room: {roomId}</p></div>
+          <p className="text-sm text-slate-400">{users.length} {users.length === 1 ? 'member' : 'members'}</p>
         </div>
-
-        {/* Header: Room Info and Users */}
-        <motion.div
-          className="absolute top-0 left-0 w-full bg-slate-900 p-4 shadow-md"
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3 }}
-        >
-          <h1 className="text-2xl font-bold text-white">Code Room: {roomId}</h1>
-          <AnimatePresence>
-            {error && (
-              <motion.p
-                className="text-red-400 bg-red-900/50 p-2 rounded mt-2"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.2 }}
-                role="alert"
-              >
-                {error}
-              </motion.p>
-            )}
-          </AnimatePresence>
-          <p className="text-sm mt-2">
-            <span className="font-semibold text-white">Users in room:</span> {users.join(', ')}
-          </p>
-        </motion.div>
+      </header>
+      <div className="mx-auto grid min-h-[calc(100vh-125px)] max-w-[1600px] gap-3 p-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.8fr)] sm:p-4">
+        <section className="flex min-h-[55vh] flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+          <div className="flex shrink-0 items-center justify-between border-b border-slate-800 px-4 py-3"><span className="text-sm font-medium text-white">C++17</span><span className="text-xs text-slate-500">{userLabel}</span></div>
+          <div className="min-h-0 flex-1"><MonacoCodeEditor code={code} setCode={handleCodeChange} language="cpp" height="100%" /></div>
+          <div className="flex shrink-0 justify-end border-t border-slate-800 p-3"><button onClick={handleRun} disabled={running} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50">{running ? 'Running…' : 'Run code'}</button></div>
+        </section>
+        <aside className="flex min-h-[45vh] flex-col gap-3">
+          <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-slate-800 bg-slate-900 p-4"><label className="text-sm font-medium text-white">Input</label><textarea value={input} onChange={(e) => handleInputChange(e.target.value)} className="mt-2 min-h-40 flex-1 resize-y rounded-md border border-slate-700 bg-slate-950 p-3 font-mono text-sm text-slate-200 outline-none focus:border-blue-500" placeholder="Enter custom input…" /></section>
+          <section className="min-h-40 rounded-xl border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-medium text-white">Output</h2><pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-slate-950 p-3 font-mono text-xs text-slate-300">{outputError || output || 'Run code to see output.'}</pre></section>
+          {users.length > 0 && <section className="rounded-xl border border-slate-800 bg-slate-900 p-4"><h2 className="text-sm font-medium text-white">Members</h2><p className="mt-2 break-all text-xs leading-5 text-slate-400">{users.join(', ')}</p></section>}
+        </aside>
       </div>
-    </div>
+      {error && <div className="fixed bottom-4 left-1/2 z-50 w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 rounded-lg border border-red-900 bg-slate-900 px-4 py-3 text-sm text-red-300 shadow-lg" role="alert">{error}</div>}
+    </main>
   );
-};
+}
 
-// Wrap CodeRoomPage in Suspense for useSearchParams and useRouter
-export default function CodeRoomPageWrapper() {
-  return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-screen text-slate-300 bg-gradient-to-br from-slate-900 to-slate-800">
-        <FaSpinner className="animate-spin mr-2" /> Loading Code Room...
-      </div>
-    }>
-      <CodeRoomPage />
-    </Suspense>
-  );
+export default function CodeRoomPage() {
+  return <Suspense fallback={<main className="min-h-screen bg-slate-950" />}><CodeRoom /></Suspense>;
 }
