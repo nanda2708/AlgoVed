@@ -1,702 +1,169 @@
 'use client';
-import { useState, useEffect, useContext, useRef, Suspense } from 'react';
+
+import { useCallback, useContext, useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { AuthContext } from '../../context/AuthContext.js';
 import dynamic from 'next/dynamic';
 import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
-import { motion, AnimatePresence } from 'framer-motion';
-import { FaSpinner, FaCheckCircle, FaTimesCircle, FaSort } from 'react-icons/fa';
 import rehypeSanitize from 'rehype-sanitize';
+import { AuthContext } from '../../context/AuthContext.js';
 
 const MonacoCodeEditor = dynamic(() => import('../../components/MonacoCodeEditor.jsx'), { ssr: false });
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const STARTER_CODE = `#include <iostream>\nusing namespace std;\n\nint main() {\n    int a, b;\n    cin >> a >> b;\n    cout << a + b;\n    return 0;\n}`;
 
-const Problem = () => {
+export default function ProblemPage() {
   const { isLoggedIn, authLoading } = useContext(AuthContext);
   const { id } = useParams();
   const router = useRouter();
   const [problem, setProblem] = useState(null);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [code, setCode] = useState(`#include <iostream>
-using namespace std;
-
-int main() {
-    int num1, num2, sum;
-    cin >> num1 >> num2;
-    sum = num1 + num2;
-    cout << sum;
-    return 0;
-}`);
-  const [language, setLanguage] = useState('cpp');
-  const [activeTab, setActiveTab] = useState('problem');
-  const [activeTestCase, setActiveTestCase] = useState(0);
-  const [customInput, setCustomInput] = useState('');
-  const [output, setOutput] = useState('');
-  const [testCaseResults, setTestCaseResults] = useState([]);
-  const [verdict, setVerdict] = useState('');
-  const [aiReview, setAiReview] = useState('');
-  const [showAiReview, setShowAiReview] = useState(false);
   const [submissions, setSubmissions] = useState([]);
   const [comments, setComments] = useState([]);
-  const [newComment, setNewComment] = useState('');
-  const [loadingRun, setLoadingRun] = useState(false);
-  const [loadingSubmit, setLoadingSubmit] = useState(false);
-  const [loadingReview, setLoadingReview] = useState(false);
-  const [loadingSubmissions, setLoadingSubmissions] = useState(true);
-  const [loadingComments, setLoadingComments] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(50);
-  const [sortBy, setSortBy] = useState('date-desc'); // For submissions sorting
-  const containerRef = useRef(null);
+  const [code, setCode] = useState(STARTER_CODE);
+  const [customInput, setCustomInput] = useState('');
+  const [output, setOutput] = useState('');
+  const [verdict, setVerdict] = useState('');
+  const [comment, setComment] = useState('');
+  const [tab, setTab] = useState('problem');
+  const [loading, setLoading] = useState(true);
+  const [running, setRunning] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
+  const [error, setError] = useState('');
+  const [review, setReview] = useState('');
+
+  const authConfig = useCallback(() => {
+    const token = localStorage.getItem('token');
+    if (!token) throw new Error('Authentication required');
+    return { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 };
+  }, []);
 
   useEffect(() => {
     if (authLoading) return;
-    if (!isLoggedIn) {
-      router.push('/login');
-      return;
-    }
-
-    const fetchProblemAndData = async () => {
+    if (!isLoggedIn) { router.replace('/login'); return; }
+    if (!id) return;
+    const controller = new AbortController();
+    const load = async () => {
       try {
-        const token = localStorage.getItem('token');
-        console.log('Fetching with token:', token, 'Problem ID:', id, 'API URL:', process.env.NEXT_PUBLIC_API_URL);
-
-        if (!token) throw new Error('No authentication token found');
-        if (!id) throw new Error('No problem ID provided');
-
-        const problemRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/problems/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        console.log('Problem response:', problemRes.data);
+        const config = { ...authConfig(), signal: controller.signal };
+        const [problemRes, submissionsRes, commentsRes] = await Promise.all([
+          axios.get(`${API_URL}/api/problems/${id}`, config),
+          axios.get(`${API_URL}/api/submissions`, { ...config, params: { problemId: id } }),
+          axios.get(`${API_URL}/api/comments`, { ...config, params: { problemId: id } }),
+        ]);
         setProblem(problemRes.data);
-
-        setLoadingSubmissions(true);
-        const submissionsRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/submissions`, {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { problemId: id },
-        });
-        console.log('Submissions response:', submissionsRes.data);
         setSubmissions(Array.isArray(submissionsRes.data) ? submissionsRes.data : []);
-
-        setLoadingComments(true);
-        const commentsRes = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/comments`, {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { problemId: id },
-        });
-        console.log('Comments response:', commentsRes.data);
         setComments(Array.isArray(commentsRes.data) ? commentsRes.data : []);
       } catch (err) {
-        console.error('Fetch error:', err, 'Response:', err.response?.data, 'Status:', err.response?.status);
-        if (err.response?.status === 404) {
-          if (err.config?.url.includes('/api/problems')) {
-            setError('Problem not found. Please check the problem ID or add it to the database.');
-          } else if (err.config?.url.includes('/api/submissions')) {
-            setError('No submissions found for this problem.');
-            setSubmissions([]);
-          } else if (err.config?.url.includes('/api/comments')) {
-            setError('No comments found for this problem.');
-            setComments([]);
-          } else {
-            setError('Resource not found.');
-          }
-        } else {
-          setError(err.response?.data?.message || err.message || 'Failed to load data');
-        }
+        if (err.code !== 'ERR_CANCELED') setError(err.response?.data?.message || 'Unable to load this problem');
       } finally {
-        setLoading(false);
-        setLoadingSubmissions(false);
-        setLoadingComments(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
+    load();
+    return () => controller.abort();
+  }, [authConfig, authLoading, id, isLoggedIn, router]);
 
-    fetchProblemAndData();
-  }, [id, isLoggedIn, authLoading, router]);
+  const run = async (input) => {
+    const res = await axios.post(`${API_URL}/api/compiler/run`, { language: 'cpp', code, input }, authConfig());
+    return res.data?.output ?? '';
+  };
 
   const handleRun = async () => {
-    setError('');
-    setOutput('');
-    setVerdict('');
-    setTestCaseResults([]);
-    setLoadingRun(true);
-
+    setError(''); setVerdict(''); setOutput(''); setRunning(true);
     try {
-      if (activeTestCase === 'custom') {
-        // Handle custom input
-        const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/run`, {
-          language,
-          code,
-          input: customInput,
-        });
-        console.log('Run response for custom input:', res.data);
-        setOutput(res.data.output); // Update output state with custom input result
-        setVerdict('Custom input executed');
-      } else {
-        // Handle predefined test cases
-        const visibleTestCases = problem.testCases.filter((tc) => !tc.hidden);
-        const results = [];
-        let allPassed = true;
-
-        for (let i = 0; i < visibleTestCases.length; i++) {
-          const input = visibleTestCases[i].input;
-          const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/run`, {
-            language,
-            code,
-            input,
-          });
-          console.log(`Run response for test case ${i + 1}:`, res.data);
-          const passed = res.data.output.trim() === visibleTestCases[i].output.trim();
-          results[i] = {
-            input,
-            expected: visibleTestCases[i].output,
-            actual: res.data.output,
-            passed,
-            status: passed ? 'Accepted' : 'Wrong Answer',
-          };
-          if (!passed) allPassed = false;
-        }
-
-        setTestCaseResults(results);
-        setVerdict(allPassed ? 'All sample test cases passed' : `${results.filter((r) => r.passed).length}/${visibleTestCases.length} test cases passed`);
-        setActiveTestCase(0);
-      }
+      const result = await run(customInput);
+      setOutput(result);
+      setVerdict('Execution completed');
     } catch (err) {
-      console.error('Run error:', err);
-      setError(err.response?.data?.error || 'Failed to run code');
-      setVerdict('Error running test cases');
-    } finally {
-      setLoadingRun(false);
-    }
+      setError(err.response?.data?.message || 'Code execution failed');
+      setVerdict('Execution failed');
+    } finally { setRunning(false); }
+  };
+
+  const handleSamples = async () => {
+    setError(''); setVerdict(''); setOutput(''); setRunning(true);
+    try {
+      const samples = (problem?.testCases || []).filter((test) => !test.hidden);
+      if (!samples.length) { setVerdict('No sample tests available'); return; }
+      let passed = 0;
+      let lastOutput = '';
+      for (const test of samples) {
+        lastOutput = await run(test.input || '');
+        if (lastOutput.trim() !== String(test.output || '').trim()) break;
+        passed += 1;
+      }
+      setOutput(lastOutput);
+      setVerdict(`${passed}/${samples.length} sample tests passed`);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Sample execution failed');
+      setVerdict('Execution failed');
+    } finally { setRunning(false); }
   };
 
   const handleSubmit = async () => {
-    setError('');
-    setVerdict('');
-    setLoadingSubmit(true);
+    setError(''); setVerdict(''); setSubmitting(true);
     try {
-      const token = localStorage.getItem('token');
-      console.log('Submitting code for problemId:', id);
-      const res = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/submissions`,
-        { problemId: id, code, language },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      console.log('Submission response:', res.data);
-      setSubmissions((prev) => [res.data, ...prev]);
-      setActiveTab('submissions');
-      setVerdict(res.data.status === 'Accepted' ? 'Accepted' : 'Wrong Answer');
+      const res = await axios.post(`${API_URL}/api/submissions`, { problemId: id, code, language: 'cpp' }, { ...authConfig(), timeout: 30000 });
+      setSubmissions((items) => [res.data, ...items]);
+      setVerdict(res.data?.status || 'Submitted');
+      setTab('submissions');
     } catch (err) {
-      console.error('Submission error:', err);
       setError(err.response?.data?.message || 'Submission failed');
       setVerdict('Submission failed');
-    } finally {
-      setLoadingSubmit(false);
-    }
+    } finally { setSubmitting(false); }
   };
 
-  const handleAiReview = async () => {
-    setError('');
-    setAiReview('');
-    setLoadingReview(true);
+  const handleReview = async () => {
+    setError(''); setReview(''); setReviewing(true);
     try {
-      console.log('Requesting AI review for code:', code);
-      const res = await axios.post(`${process.env.NEXT_PUBLIC_COMPILER_API_URL}/ai-review`, { code });
-      const reviewText = typeof res.data.review === 'string' ? res.data.review : String(res.data.review || '');
-      console.log('AI review response:', reviewText);
-      setAiReview(reviewText);
-      setShowAiReview(true);
+      const res = await axios.post(`${API_URL}/api/compiler/ai-review`, { code }, { ...authConfig(), timeout: 30000 });
+      setReview(res.data?.review || 'No review was returned.');
     } catch (err) {
-      console.error('AI review error:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to get AI review');
-    } finally {
-      setLoadingReview(false);
-    }
+      setError(err.response?.data?.message || 'Code review failed');
+    } finally { setReviewing(false); }
   };
 
-  const handlePostComment = async () => {
-    if (!newComment.trim()) return;
-    setError('');
+  const postComment = async () => {
+    if (!comment.trim()) return;
     try {
-      const token = localStorage.getItem('token');
-      console.log('Posting comment for problemId:', id);
-      const res = await axios.post(
-        `${process.env.NEXT_PUBLIC_API_URL}/api/comments`,
-        { problemId: id, content: newComment },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      console.log('Comment response:', res.data);
-      setComments((prev) => [res.data, ...prev]);
-      setNewComment('');
-    } catch (err) {
-      console.error('Comment error:', err);
-      setError(err.response?.data?.message || 'Failed to post comment');
-    }
+      const res = await axios.post(`${API_URL}/api/comments`, { problemId: id, content: comment.trim() }, authConfig());
+      setComments((items) => [res.data, ...items]);
+      setComment('');
+    } catch (err) { setError(err.response?.data?.message || 'Could not post comment'); }
   };
 
-  const sortedSubmissions = [...submissions].sort((a, b) => {
-    if (sortBy === 'date-desc') return new Date(b.createdAt) - new Date(a.createdAt);
-    if (sortBy === 'date-asc') return new Date(a.createdAt) - new Date(b.createdAt);
-    if (sortBy === 'status-accepted') return a.status === 'Accepted' ? -1 : 1;
-    if (sortBy === 'status-wrong') return a.status === 'Wrong Answer' ? -1 : 1;
-    return 0;
-  });
-
-  if (authLoading || loading) return (
-    <div className="flex items-center justify-center h-screen text-slate-600 dark:text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-      <FaSpinner className="animate-spin mr-2" /> Loading...
-    </div>
-  );
-  if (error) return (
-    <div className="flex items-center justify-center h-screen text-red-500 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800" role="alert">
-      {error}
-    </div>
-  );
-  if (!problem) return (
-    <div className="flex items-center justify-center h-screen text-red-500 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800" role="alert">
-      Problem not found
-    </div>
-  );
+  if (authLoading || loading) return <main className="flex min-h-[70vh] items-center justify-center bg-slate-950 text-slate-400">Loading problem…</main>;
+  if (!problem) return <main className="flex min-h-[70vh] items-center justify-center bg-slate-950 px-4 text-center text-red-400">{error || 'Problem not found'}</main>;
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 font-sans" ref={containerRef}>
-      {/* Left Panel */}
-      <motion.div
-        className="flex flex-col h-full bg-white dark:bg-slate-800 shadow-2xl border-r border-slate-200 dark:border-slate-600"
-        style={{ width: `${panelWidth}%` }}
-        transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-      >
-        {/* Tabs */}
-        <div className="flex gap-3 p-4 bg-slate-900 text-white shadow-md">
-          {['problem', 'submissions', 'discuss'].map((tab) => (
-            <motion.button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-4 py-2 rounded-lg font-medium capitalize text-sm sm:text-base ${
-                activeTab === tab ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
-              } transition-colors duration-200`}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {tab}
-            </motion.button>
-          ))}
-        </div>
-
-        {/* Tab Content */}
-        <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
-          <AnimatePresence mode="wait">
-            {activeTab === 'problem' && (
-              <motion.div
-                key="problem"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ duration: 0.3 }}
-                className="bg-white dark:bg-slate-700 shadow-lg rounded-xl p-4 sm:p-6"
-              >
-                <h1 className="text-xl sm:text-2xl font-bold text-slate-800 dark:text-white mb-3">{problem.title}</h1>
-                <p className="text-sm text-slate-600 dark:text-slate-300 mb-4">
-                  Difficulty: <span className={`font-semibold ${
-                    problem.difficulty === 'Easy' ? 'text-green-500' : 
-                    problem.difficulty === 'Medium' ? 'text-yellow-500' : 'text-red-500'
-                  }`}>{problem.difficulty}</span>
-                </p>
-                <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
-                  <h2 className="text-lg font-semibold mb-2">Description</h2>
-                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{problem.description}</ReactMarkdown>
-                  {problem.testCases?.length > 0 && (
-                    <div className="mt-4">
-                      <h3 className="text-md font-semibold">Sample Test Cases</h3>
-                      <ul className="list-disc pl-5 space-y-2">
-                        {problem.testCases
-                          .filter((tc) => !tc.hidden)
-                          .map((tc, i) => (
-                            <li key={i} className="text-sm">
-                              <strong>Input:</strong> <pre className="inline-block bg-slate-100 dark:bg-slate-600 px-10 rounded-md">{tc.input}</pre><br />
-                              <strong>Output:</strong> <pre className="inline-block bg-slate-100 dark:bg-slate-600 px-10 rounded-md">{tc.output}</pre>
-                            </li>
-                          ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              </motion.div>
-            )}
-
-            {activeTab === 'submissions' && (
-              <motion.div
-                key="submissions"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ duration: 0.3 }}
-                className="bg-white dark:bg-slate-700 shadow-lg rounded-xl p-4 sm:p-6"
-              >
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Submissions</h2>
-                  <select
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="date-desc">Newest First</option>
-                    <option value="date-asc">Oldest First</option>
-                    <option value="status-accepted">Accepted</option>
-                    <option value="status-wrong">Wrong Answer</option>
-                  </select>
-                </div>
-                {loadingSubmissions ? (
-                  <div className="text-center text-slate-600 dark:text-slate-300 flex items-center justify-center">
-                    <FaSpinner className="animate-spin mr-2" /> Loading submissions...
-                  </div>
-                ) : submissions.length === 0 ? (
-                  <p className="text-slate-600 dark:text-slate-400">No submissions yet.</p>
-                ) : (
-                  <ul className="space-y-3">
-                    {sortedSubmissions.map((submission) => (
-                      <motion.li
-                        key={submission._id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="border border-slate-200 dark:border-slate-600 rounded-lg p-4 bg-slate-50 dark:bg-slate-800"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {submission.status === 'Accepted' ? (
-                              <FaCheckCircle className="text-green-500" />
-                            ) : (
-                              <FaTimesCircle className="text-red-500" />
-                            )}
-                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">
-                              {submission.status}
-                            </p>
-                          </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">
-                            {new Date(submission.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                        <p className="text-sm text-slate-600 dark:text-slate-300">
-                          <strong>Language:</strong> {submission.language}
-                        </p>
-                        <p className="text-sm text-slate-600 dark:text-slate-300">
-                          <strong>UUID:</strong> {submission.codeUUID}
-                        </p>
-                        {submission.code && (
-                          <details className="mt-2">
-                            <summary className="text-sm text-blue-500 hover:underline cursor-pointer">View Code</summary>
-                            <pre className="text-xs font-mono bg-slate-100 dark:bg-slate-600 p-2 rounded-md mt-1 overflow-x-auto">
-                              {submission.code}
-                            </pre>
-                          </details>
-                        )}
-                        {submission.testCaseResults?.length > 0 && (
-                          <div className="mt-2">
-                            <h3 className="text-sm font-semibold">Test Case Results</h3>
-                            <ul className="list-disc pl-5 text-sm space-y-1">
-                              {submission.testCaseResults.map((tc, i) => (
-                                <li key={i} className={tc.passed ? 'text-green-500' : 'text-red-500'}>
-                                  Test Case {i + 1}: {tc.status} {tc.passed ? '' : `(Expected: ${tc.expected}, Got: ${tc.actual})`}
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </motion.li>
-                    ))}
-                  </ul>
-                )}
-              </motion.div>
-            )}
-
-            {activeTab === 'discuss' && (
-              <motion.div
-                key="discuss"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ duration: 0.3 }}
-                className="bg-white dark:bg-slate-700 shadow-lg rounded-xl p-4 sm:p-6"
-              >
-                <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4">Discuss</h2>
-                <div className="mb-4">
-                  <textarea
-                    value={newComment}
-                    onChange={(e) => setNewComment(e.target.value)}
-                    placeholder="Add a comment (supports *bold*, `code`, etc.)..."
-                    className="w-full p-3 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 transition"
-                    rows="4"
-                    aria-label="New Comment"
-                  />
-                  <motion.button
-                    onClick={handlePostComment}
-                    disabled={!newComment.trim()}
-                    className="mt-2 bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 transition-colors duration-200"
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                  >
-                    Post Comment
-                  </motion.button>
-                </div>
-                {loadingComments ? (
-                  <div className="text-center text-slate-600 dark:text-slate-300 flex items-center justify-center">
-                    <FaSpinner className="animate-spin mr-2" /> Loading comments...
-                  </div>
-                ) : comments.length === 0 ? (
-                  <p className="text-slate-600 dark:text-slate-400">No comments yet. Start the discussion!</p>
-                ) : (
-                  <ul className="space-y-3">
-                    {comments.map((comment) => (
-                      <motion.li
-                        key={comment._id}
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="border border-slate-200 dark:border-slate-600 rounded-lg p-4 bg-slate-50 dark:bg-slate-800"
-                      >
-                        <div className="flex items-center gap-3 mb-2">
-                          <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm">
-                            {comment.userId?.username?.[0]?.toUpperCase() || 'U'}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">{comment.userId?.username || 'Anonymous'}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{new Date(comment.createdAt).toLocaleString()}</p>
-                          </div>
-                        </div>
-                        <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
-                          <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{comment.content}</ReactMarkdown>
-                        </div>
-                        <button className="text-xs text-blue-500 hover:underline mt-2">Reply</button>
-                      </motion.li>
-                    ))}
-                  </ul>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-      </motion.div>
-
-      {/* Right Panel */}
-      <div className="flex flex-col h-full bg-white dark:bg-slate-800" style={{ width: `${100 - panelWidth}%` }}>
-        {/* Panel Width Controls */}
-        <div className="flex justify-end gap-2 p-2 bg-slate-100 dark:bg-slate-700 border-b border-slate-200 dark:border-slate-600">
-          <motion.button
-            onClick={() => setPanelWidth(Math.max(30, panelWidth - 10))}
-            className="px-3 py-1 text-xs bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            ← Expand Code
-          </motion.button>
-          <motion.button
-            onClick={() => setPanelWidth(Math.min(70, panelWidth + 10))}
-            className="px-3 py-1 text-xs bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200 rounded hover:bg-slate-300 dark:hover:bg-slate-500 transition-colors"
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            Expand Problem →
-          </motion.button>
-        </div>
-
-        {/* Code Editor */}
-        <div className="h-1/2 p-4">
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-2">Code Editor</label>
-          <div className="h-[calc(100%-2rem)] bg-slate-900 rounded-lg overflow-hidden border border-slate-700">
-            <MonacoCodeEditor
-              code={code}
-              setCode={setCode}
-              language={language}
-              setLanguage={setLanguage}
-              height="100%"
-            />
+    <main className="min-h-[calc(100vh-64px)] bg-slate-950 text-slate-100">
+      <div className="mx-auto flex min-h-[calc(100vh-64px)] max-w-[1600px] flex-col lg:flex-row">
+        <section className="min-h-0 flex-1 overflow-y-auto border-b border-slate-800 lg:border-b-0 lg:border-r">
+          <div className="sticky top-0 z-10 flex gap-1 overflow-x-auto border-b border-slate-800 bg-slate-950/95 p-2 backdrop-blur">
+            {['problem', 'submissions', 'discussion'].map((item) => <button key={item} onClick={() => setTab(item)} className={`whitespace-nowrap rounded-md px-3 py-2 text-sm font-medium capitalize ${tab === item ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-900 hover:text-white'}`}>{item}</button>)}
           </div>
-        </div>
-
-        {/* Test Cases and Results */}
-        <div className="h-1/2 p-4 overflow-y-auto bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700">
-          <div className="flex flex-wrap gap-2 mb-3">
-            {problem.testCases.filter((tc) => !tc.hidden).map((_, i) => (
-              <motion.button
-                key={i}
-                onClick={() => setActiveTestCase(i)}
-                className={`px-3 py-1 text-sm font-medium rounded-md ${
-                  activeTestCase === i ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600'
-                } transition-colors duration-200`}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                Test Case {i + 1}
-              </motion.button>
-            ))}
-            <motion.button
-              onClick={() => setActiveTestCase('custom')}
-              className={`px-3 py-1 text-sm font-medium rounded-md ${
-                activeTestCase === 'custom' ? 'bg-blue-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600'
-              } transition-colors duration-200`}
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              Custom Input
-            </motion.button>
+          <div className="p-4 sm:p-6 lg:p-8">
+            {tab === 'problem' && <article>
+              <div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold sm:text-3xl">{problem.title}</h1><p className="mt-2 text-sm text-slate-400">Difficulty: <span className="font-medium text-slate-200">{problem.difficulty}</span></p></div></div>
+              <div className="prose prose-sm prose-invert mt-6 max-w-none sm:prose-base"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{problem.description}</ReactMarkdown></div>
+              {!!problem.testCases?.length && <div className="mt-8"><h2 className="text-lg font-semibold">Examples</h2><div className="mt-3 space-y-3">{problem.testCases.filter((t) => !t.hidden).map((t, i) => <div key={i} className="rounded-lg border border-slate-800 bg-slate-900 p-4"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">Input</p><pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-sm text-slate-200">{t.input}</pre><p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">Output</p><pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-sm text-slate-200">{t.output}</pre></div>)}</div></div>}
+            </article>}
+            {tab === 'submissions' && <div><h2 className="text-xl font-semibold">Your submissions</h2><div className="mt-4 space-y-2">{submissions.length ? submissions.map((s) => <div key={s._id} className="flex flex-wrap justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"><span className={s.status === 'Accepted' ? 'text-emerald-400' : 'text-red-400'}>{s.status}</span><span className="text-xs text-slate-500">{s.createdAt ? new Date(s.createdAt).toLocaleString() : ''}</span></div>) : <p className="text-sm text-slate-500">No submissions yet.</p>}</div></div>}
+            {tab === 'discussion' && <div><h2 className="text-xl font-semibold">Discussion</h2><div className="mt-4 flex flex-col gap-2 sm:flex-row"><input value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} placeholder="Share a question or approach" className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500" /><button onClick={postComment} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500">Post</button></div><div className="mt-5 space-y-3">{comments.length ? comments.map((item) => <article key={item._id} className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm text-slate-300">{item.content}</article>) : <p className="text-sm text-slate-500">No discussion yet.</p>}</div></div>}
           </div>
+        </section>
 
-          <div className="bg-white dark:bg-slate-700 rounded-lg p-4 shadow-md">
-            {activeTestCase === 'custom' ? (
-              <div>
-                <label className="block text-sm font-medium text-slate-700 dark:text-slate-200 mb-1">Custom Input</label>
-                <textarea
-                  value={customInput}
-                  onChange={(e) => setCustomInput(e.target.value)}
-                  placeholder="Enter custom input..."
-                  className="w-full p-2 text-sm border border-slate-300 dark:border-slate-600 rounded-md bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-blue-500 font-mono"
-                  rows="4"
-                  aria-label="Custom Test Case Input"
-                />
-                {output && (
-                  <div className="mt-3">
-                    <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">Output</h3>
-                    <pre className="text-sm font-mono text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-600 p-2 rounded-md whitespace-pre-wrap">{output}</pre>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div>
-                <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">Input</h3>
-                <pre className="text-sm font-mono text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-600 p-2 rounded-md mb-2 whitespace-pre-wrap">
-                  {problem.testCases[activeTestCase]?.input}
-                </pre>
-                <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">Expected Output</h3>
-                <pre className="text-sm font-mono text-slate-800 dark:text-slate-200 bg-slate-100 dark:bg-slate-600 p-2 rounded-md mb-2 whitespace-pre-wrap">
-                  {problem.testCases[activeTestCase]?.output}
-                </pre>
-                {testCaseResults[activeTestCase] && (
-                  <div>
-                    <h3 className="text-sm font-medium text-slate-700 dark:text-slate-200">Actual Output</h3>
-                    <pre
-                      className={`text-sm font-mono bg-slate-100 dark:bg-slate-600 p-2 rounded-md whitespace-pre-wrap ${
-                        testCaseResults[activeTestCase].passed ? 'text-green-500' : 'text-red-500'
-                      }`}
-                    >
-                      {testCaseResults[activeTestCase].actual}
-                    </pre>
-                    <p className={`mt-2 text-sm ${testCaseResults[activeTestCase].passed ? 'text-green-500' : 'text-red-500'}`}>
-                      {testCaseResults[activeTestCase].status}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-            {verdict && (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className={`mt-4 p-3 rounded-md text-sm ${
-                  verdict.includes('All sample test cases passed') ||
-                  verdict === 'Accepted'
-                    ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300'
-                    : (verdict === 'Custom input executed') ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' :'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300'
-                }`}
-              >
-                <strong>Verdict:</strong> {verdict}
-              </motion.div>
-            )}
+        <section className="flex min-h-[520px] min-w-0 flex-1 flex-col bg-slate-950 lg:min-h-0">
+          <div className="min-h-0 flex-1 p-2 sm:p-3"><MonacoCodeEditor code={code} setCode={setCode} language="cpp" height="100%" /></div>
+          <div className="shrink-0 border-t border-slate-800 bg-slate-900 p-3 sm:p-4">
+            <div className="flex flex-wrap gap-2"><button disabled={running || submitting} onClick={handleRun} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">{running ? 'Running…' : 'Run input'}</button><button disabled={running || submitting} onClick={handleSamples} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">Run samples</button><button disabled={running || submitting} onClick={handleSubmit} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit'}</button><button disabled={reviewing} onClick={handleReview} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">{reviewing ? 'Reviewing…' : 'Review code'}</button></div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2"><label><span className="text-xs text-slate-500">Custom input</span><textarea value={customInput} onChange={(e) => setCustomInput(e.target.value)} rows={3} maxLength={100000} className="mt-1 w-full resize-y rounded-md border border-slate-700 bg-slate-950 p-2 font-mono text-xs outline-none focus:border-blue-500" placeholder="Input passed to your program" /></label><div><span className="text-xs text-slate-500">Output</span><pre className="mt-1 min-h-20 max-h-32 overflow-auto rounded-md border border-slate-800 bg-slate-950 p-2 text-xs text-slate-200">{output || verdict || 'Run your code to see output.'}</pre></div></div>
+            {error && <p className="mt-2 text-sm text-red-400" role="alert">{error}</p>}
+            {review && <div className="mt-3 max-h-56 overflow-auto rounded-lg border border-slate-700 bg-slate-950 p-4"><div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold">Code review</span><button onClick={() => setReview('')} className="text-xs text-slate-500 hover:text-white">Close</button></div><div className="prose prose-sm prose-invert max-w-none"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{review}</ReactMarkdown></div></div>}
           </div>
-
-          <div className="flex justify-end gap-2 mt-4">
-            <motion.button
-              onClick={handleRun}
-              disabled={loadingRun || loadingSubmit || loadingReview}
-              className="bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 disabled:bg-blue-300 transition-colors duration-200 flex items-center gap-2"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {loadingRun && <FaSpinner className="animate-spin" />}
-              Run Code
-            </motion.button>
-            <motion.button
-              onClick={handleSubmit}
-              disabled={loadingRun || loadingSubmit || loadingReview}
-              className="bg-green-500 text-white py-2 px-4 rounded-lg hover:bg-green-600 disabled:bg-green-300 transition-colors duration-200 flex items-center gap-2"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-            >
-              {loadingSubmit && <FaSpinner className="animate-spin" />}
-              Submit
-            </motion.button>
-          </div>
-        </div>
+        </section>
       </div>
-
-      {/* AI Review */}
-      <motion.div
-        className="fixed bottom-4 right-4"
-        whileHover={{ scale: 1.1 }}
-        whileTap={{ scale: 0.9 }}
-      >
-        {(!loadingReview) ? (
-          <button
-            onClick={() => {
-              if (!showAiReview) handleAiReview();
-              else setShowAiReview(false);
-            }}
-            className="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors duration-200"
-            aria-label="Toggle AI Review"
-          >
-            🤖
-          </button>
-        ) : (
-          <button
-            className="bg-blue-500 text-white p-3 rounded-full shadow-lg hover:bg-blue-600 transition-colors duration-200"
-            aria-label="Toggle AI Review"
-          >
-            Loading...
-          </button>
-        )}
-
-        <AnimatePresence>
-          {showAiReview && (
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 20 }}
-              className="absolute bottom-12 right-0 bg-white dark:bg-slate-800 shadow-lg rounded-lg p-4 w-80 max-h-96 overflow-y-auto border border-slate-200 dark:border-slate-600"
-              role="dialog"
-              aria-label="AI Code Review"
-            >
-              <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">AI Code Review</h3>
-              {loadingReview ? (
-                <div className="text-center text-slate-600 dark:text-slate-300 flex items-center justify-center">
-                  <FaSpinner className="animate-spin mr-2" /> Loading AI review...
-                </div>
-              ) : aiReview ? (
-                <div className="prose prose-sm dark:prose-invert text-slate-700 dark:text-slate-200">
-                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>{aiReview}</ReactMarkdown>
-                </div>
-              ) : (
-                <div className="text-slate-600 dark:text-slate-400">No review available.</div>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowAiReview(false)}
-                className="mt-2 text-sm text-blue-500 hover:underline"
-              >
-                Close
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-    </div>
-  );
-};
-
-// Wrap Problem in Suspense for useParams and useRouter
-export default function ProblemWrapper() {
-  return (
-    <Suspense fallback={
-      <div className="flex items-center justify-center h-screen text-slate-600 dark:text-slate-300 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
-        <FaSpinner className="animate-spin mr-2" /> Loading Problem...
-      </div>
-    }>
-      <Problem />
-    </Suspense>
+    </main>
   );
 }
