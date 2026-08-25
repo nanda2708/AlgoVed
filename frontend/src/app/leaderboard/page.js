@@ -1,31 +1,31 @@
-const mockLeaderboard = [
-  { rank: 1, username: 'user1', score: 1500 },
-  { rank: 2, username: 'user2', score: 1200 },
-  { rank: 3, username: 'user3', score: 900 },
-];
+'use client';
+
+import { useEffect, useState } from 'react';
+import axios from 'axios';
 
 export default function Leaderboard() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+
+  useEffect(() => {
+    const controller = new AbortController();
+    axios.get(`${API_URL}/api/leaderboard`, { signal: controller.signal, timeout: 10000 })
+      .then((res) => setRows(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => { if (err.code !== 'ERR_CANCELED') setError(err.response?.data?.message || 'Failed to load leaderboard'); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [API_URL]);
+
   return (
-    <div className="max-w-6xl mx-auto p-4">
-      <h1 className="text-3xl font-bold mb-4">Leaderboard</h1>
-      <table className="w-full border-collapse bg-white rounded-lg shadow-md">
-        <thead>
-          <tr className="bg-gray-200">
-            <th className="border p-2">Rank</th>
-            <th className="border p-2">Username</th>
-            <th className="border p-2">Score</th>
-          </tr>
-        </thead>
-        <tbody>
-          {mockLeaderboard.map((user) => (
-            <tr key={user.rank} className="border">
-              <td className="border p-2">{user.rank}</td>
-              <td className="border p-2">{user.username}</td>
-              <td className="border p-2">{user.score}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+    <main className="min-h-[calc(100vh-64px)] bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
+        <div className="mb-7"><p className="text-sm font-medium text-blue-400">Community</p><h1 className="mt-1 text-3xl font-bold">Leaderboard</h1><p className="mt-2 text-sm text-slate-400">Rankings based on unique problems solved and accepted submissions.</p></div>
+        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+          {loading ? <div className="p-8 text-sm text-slate-400">Loading leaderboard...</div> : error ? <div className="p-8 text-sm text-red-400">{error}</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-slate-400">No accepted submissions yet.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-slate-800 bg-slate-950 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Rank</th><th className="px-5 py-3">User</th><th className="px-5 py-3">Problems solved</th><th className="px-5 py-3">Accepted</th></tr></thead><tbody>{rows.map((row) => <tr key={row.username} className="border-b border-slate-800 last:border-0"><td className="px-5 py-4 font-semibold text-slate-300">#{row.rank}</td><td className="px-5 py-4"><div className="font-medium text-white">{row.username}</div>{row.fullName && <div className="text-xs text-slate-500">{row.fullName}</div>}</td><td className="px-5 py-4 text-slate-300">{row.problemsSolved}</td><td className="px-5 py-4 text-slate-400">{row.acceptedSubmissions}</td></tr>)}</tbody></table></div>}
+        </div>
+      </div>
+    </main>
   );
 }
