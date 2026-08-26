@@ -54,7 +54,7 @@ export default function Home() {
             <div className="space-y-3 py-5 font-mono text-sm">
               <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">01&nbsp;&nbsp; #include &lt;iostream&gt;</div>
               <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">02&nbsp;&nbsp; int main() {'{'}</div>
-              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">03&nbsp;&nbsp;&nbsp;&nbsp; cout &lt;&lt; "Hello, AlgoVed";</div>
+              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">03&nbsp;&nbsp;&nbsp;&nbsp; cout &lt;&lt; &quot;Hello, AlgoVed&quot;;</div>
               <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">04&nbsp;&nbsp; {'}'}</div>
             </div>
             <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs text-slate-500">

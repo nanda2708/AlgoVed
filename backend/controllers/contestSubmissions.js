@@ -37,6 +37,7 @@ export const createContestSubmission = async (req, res) => {
     if (!contest) return res.status(404).json({ message: 'Contest not found' });
     if (!problem) return res.status(404).json({ message: 'Problem not found' });
     if (!contest.problems.some((id) => String(id) === String(problemId))) return res.status(400).json({ message: 'Problem is not part of this contest' });
+    if (!Array.isArray(problem.testCases) || problem.testCases.length === 0) return res.status(422).json({ message: 'Problem has no test cases configured' });
 
     const now = Date.now();
     if (now < new Date(contest.startTime).getTime() || now > new Date(contest.endTime).getTime()) return res.status(400).json({ message: 'Contest is not active' });

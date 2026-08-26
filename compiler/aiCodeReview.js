@@ -4,15 +4,16 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const aiCodeReview = async (code) => {
-  const apiKey = process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+  const modelName = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
   if (!apiKey) {
-    throw new Error('GOOGLE_API_KEY is not configured');
+    throw new Error('GEMINI_API_KEY is not configured');
   }
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: modelName });
     const prompt = `Analyze the following code and provide a short and concise review. Include a list of potential improvements and suggestions:\n\n${code}`;
     const result = await model.generateContent(prompt);
     const text = result.response?.candidates?.[0]?.content?.parts?.[0]?.text || '';

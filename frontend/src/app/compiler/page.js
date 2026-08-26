@@ -32,7 +32,8 @@ int main() {
   const [toast, setToast] = useState('');
   const [language, setLanguage] = useState('cpp');
 
-  const COMPILER_API_URL = process.env.NEXT_PUBLIC_COMPILER_API_URL || 'http://localhost:8000';
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  const authConfig = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
 
   useEffect(() => {
     if (!authLoading && !isLoggedIn) {
@@ -50,15 +51,14 @@ int main() {
     setOutput('');
     setLoadingRun(true);
     try {
-      const res = await axios.post(`${COMPILER_API_URL}/run`, {
+      const res = await axios.post(`${API_URL}/api/compiler/run`, {
         language,
         code,
         input,
-      }, { timeout: 15000 });
+      }, { ...authConfig(), timeout: 20000 });
       setOutput(res.data.output || '');
     } catch (err) {
-      console.error('Run error:', err);
-      setError(err.response?.data?.error || 'Failed to run code');
+      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to run code');
     } finally {
       setLoadingRun(false);
     }
@@ -69,13 +69,12 @@ int main() {
     setAiReview('');
     setLoadingReview(true);
     try {
-      const res = await axios.post(`${COMPILER_API_URL}/ai-review`, { code }, { timeout: 30000 });
+      const res = await axios.post(`${API_URL}/api/compiler/ai-review`, { code }, { ...authConfig(), timeout: 30000 });
       const reviewText = typeof res.data.review === 'string' ? res.data.review : String(res.data.review || '');
       setAiReview(reviewText);
       showToast('✅ AI Review Complete!');
     } catch (err) {
-      console.error('AI Review Error:', err);
-      setError(err.response?.data?.error || err.message || 'Failed to get AI review');
+      setError(err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to get AI review');
     } finally {
       setLoadingReview(false);
     }
@@ -118,7 +117,7 @@ int main() {
 
           <div className="bg-white dark:bg-gray-900 shadow-md rounded-xl p-4 overflow-y-auto" style={{ maxHeight: '200px' }}>
             <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-2">AI Code Review</h2>
-            {loadingReview ? <div className="text-center text-gray-600 dark:text-gray-400">Analyzing your code...</div> : aiReview ? <div className="prose prose-sm dark:prose-invert max-w-none text-gray-800 dark:text-gray-100"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{aiReview}</ReactMarkdown></div> : <div className="text-gray-500 dark:text-gray-400">🤖 Click "AI Review" to analyze your code.</div>}
+            {loadingReview ? <div className="text-center text-gray-600 dark:text-gray-400">Analyzing your code...</div> : aiReview ? <div className="prose prose-sm dark:prose-invert max-w-none text-gray-800 dark:text-gray-100"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{aiReview}</ReactMarkdown></div> : <div className="text-gray-500 dark:text-gray-400">Click &quot;AI Review&quot; to analyze your code.</div>}
           </div>
 
           <div className="flex gap-4">

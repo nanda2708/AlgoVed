@@ -58,7 +58,7 @@ export const createSubmission = async (req, res) => {
           actual: err.response?.data?.error || err.message,
           passed: false,
           hidden: Boolean(tc.hidden),
-          status: err.response?.status === 429 ? 'Busy' : 'Error',
+          status: 'Error',
         });
       }
 

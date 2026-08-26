@@ -16,9 +16,11 @@ const AdminProblems = () => {
     title: '',
     description: '',
     difficulty: 'Easy',
+    tags: [],
     testCases: [{ input: '', output: '', hidden: false }],
   });
   const [editingId, setEditingId] = useState(null);
+  const [tagsInput, setTagsInput] = useState('');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [loading, setLoading] = useState(true);
@@ -90,6 +92,13 @@ const AdminProblems = () => {
     setForm({ ...form, testCases: [...form.testCases, { input: '', output: '', hidden: false }] });
   };
 
+  const handleTagsChange = (e) => {
+    const rawTags = e.target.value;
+    setTagsInput(rawTags);
+    const tags = [...new Set(rawTags.split(',').map((tag) => tag.trim()).filter(Boolean))];
+    setForm({ ...form, tags });
+  };
+
   const removeTestCase = (index) => {
     setForm({ ...form, testCases: form.testCases.filter((_, i) => i !== index) });
   };
@@ -114,21 +123,35 @@ const AdminProblems = () => {
         setProblems([res.data.problem, ...problems]);
         showToast('Problem created successfully');
       }
-      setForm({ title: '', description: '', difficulty: 'Easy', testCases: [{ input: '', output: '', hidden: false }] });
+      setForm({ title: '', description: '', difficulty: 'Easy', tags: [], testCases: [{ input: '', output: '', hidden: false }] });
+      setTagsInput('');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to save problem');
     }
   };
 
-  const handleEdit = (problem) => {
-    setForm({
-      title: problem.title,
-      description: problem.description,
-      difficulty: problem.difficulty,
-      testCases: problem.testCases || [{ input: '', output: '', hidden: false }],
-    });
-    setEditingId(problem._id);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  const handleEdit = async (problem) => {
+    setError('');
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) throw new Error('No token found');
+      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/problems/${problem._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const fullProblem = res.data;
+      setForm({
+        title: fullProblem.title,
+        description: fullProblem.description,
+        difficulty: fullProblem.difficulty,
+        tags: Array.isArray(fullProblem.tags) ? fullProblem.tags : [],
+        testCases: fullProblem.testCases?.length ? fullProblem.testCases : [{ input: '', output: '', hidden: false }],
+      });
+      setTagsInput((fullProblem.tags || []).join(', '));
+      setEditingId(fullProblem._id);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to load problem details for editing');
+    }
   };
 
   const handleDelete = async (id) => {
@@ -205,6 +228,17 @@ const AdminProblems = () => {
           <option value="Medium">Medium</option>
           <option value="Hard">Hard</option>
         </select>
+        <label className="grid gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
+          Tags
+          <input
+            type="text"
+            value={tagsInput}
+            onChange={handleTagsChange}
+            placeholder="arrays, dynamic programming, graphs"
+            className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-900 text-black dark:text-white"
+          />
+          <span className="font-normal text-xs text-gray-500">Separate tags with commas.</span>
+        </label>
 
         <div className="space-y-4">
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Test Cases</h3>
@@ -286,6 +320,7 @@ const AdminProblems = () => {
                   <a href={`/problems/${problem._id}`}>{problem.title}</a>
                 </h3>
                 <p className="text-sm text-gray-500 mt-1">Difficulty: {problem.difficulty}</p>
+                {problem.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{problem.tags.map((tag) => <span key={tag} className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{tag}</span>)}</div>}
               </div>
               <div className="flex gap-2">
                 <button onClick={() => handleEdit(problem)} className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600">

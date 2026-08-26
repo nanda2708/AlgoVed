@@ -1,25 +1,39 @@
-# backend/docker-compose.yml
-version: '3.8'
 services:
-  backend:
-    build: .
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
     ports:
-      - "5000:5000"
-    environment:
-      - PORT=5000
-      - MONGO_URI=mongodb+srv://nandagopal2708:u4RrbgPO2LMN2iyu@cluster0.cdlvvfj.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
-      - JWT_SECRET=secret
-      - COMPILER_API_URL=http://compiler-container:8000
-      - NEXT_PUBLIC_CLIENT_URL=https://oj-project-rhbi.vercel.app
+      - "27017:27017"
     volumes:
-      - .:/app
-    depends_on:
-      - compiler
+      - mongo_data:/data/db
+
   compiler:
-    image: my-compiler:latest # Replace with your compiler image name
+    build:
+      context: ../compiler
+    restart: unless-stopped
+    environment:
+      PORT: 8000
+      COMPILER_API_KEY: ${COMPILER_API_KEY:?set COMPILER_API_KEY in your environment}
+      MAX_CONCURRENT_RUNS: ${MAX_CONCURRENT_RUNS:-2}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     ports:
       - "8000:8000"
+
+  backend:
+    build: .
+    restart: unless-stopped
     environment:
-      - COMPILER_API_URL=http://compiler-container:8000
-    volumes:
-      - /path/to/compiler:/app # Adjust to your compiler's volume path
+      PORT: 5000
+      MONGO_URI: ${MONGO_URI:-mongodb://mongo:27017/algoved}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in your environment}
+      NEXT_PUBLIC_CLIENT_URL: ${NEXT_PUBLIC_CLIENT_URL:-http://localhost:3000}
+      COMPILER_API_URL: http://compiler:8000
+      COMPILER_API_KEY: ${COMPILER_API_KEY:?set COMPILER_API_KEY in your environment}
+    ports:
+      - "5000:5000"
+    depends_on:
+      - mongo
+      - compiler
+
+volumes:
+  mongo_data:

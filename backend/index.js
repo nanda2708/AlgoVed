@@ -49,6 +49,14 @@ const startServer = async () => {
   try {
     await connectDB();
     initSocket(server);
+    server.once('error', (error) => {
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Backend cannot start: port ${PORT} is already in use. Stop the existing process or choose another PORT.`);
+      } else {
+        console.error('Backend server error:', error.message);
+      }
+      process.exit(1);
+    });
     server.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   } catch (error) {
     console.error('Backend startup failed:', error.message);

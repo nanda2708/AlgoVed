@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect, useContext, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import { AuthContext } from '../context/AuthContext.js';
@@ -10,7 +10,7 @@ export default function RoomsPage() {
   const [error, setError] = useState(''); const [loading, setLoading] = useState(false); const [creating, setCreating] = useState(false); const router = useRouter();
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   const token = () => localStorage.getItem('token');
-  const config = () => ({ headers: { Authorization: `Bearer ${token()}` }, timeout: 10000 });
+  const config = useCallback(() => ({ headers: { Authorization: `Bearer ${token()}` }, timeout: 10000 }), []);
 
   useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/login'); }, [authLoading, isLoggedIn, router]);
   useEffect(() => {
@@ -18,7 +18,7 @@ export default function RoomsPage() {
     let cancelled = false; setLoading(true);
     axios.get(`${API_URL}/api/coding-room/user/rooms`, config()).then((res) => { if (!cancelled) setRooms(Array.isArray(res.data) ? res.data : []); }).catch((err) => { if (!cancelled) setError(err.response?.data?.message || 'Failed to fetch rooms'); }).finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [isLoggedIn, API_URL]);
+  }, [isLoggedIn, API_URL, config]);
 
   const handleCreateRoom = async () => { setError(''); setCreating(true); try { const res = await axios.post(`${API_URL}/api/coding-room/create`, {}, config()); const { roomId } = res.data; router.push(`/code-room?roomId=${encodeURIComponent(roomId)}`); } catch (err) { setError(err.response?.data?.message || 'Failed to create room'); } finally { setCreating(false); } };
   const handleInviteUser = async () => { if (!inviteRoomId.trim() || !inviteUsername.trim()) return setError('Room ID and username are required'); setError(''); try { await axios.post(`${API_URL}/api/coding-room/invite`, { roomId: inviteRoomId.trim(), username: inviteUsername.trim() }, config()); setInviteRoomId(''); setInviteUsername(''); const res = await axios.get(`${API_URL}/api/coding-room/user/rooms`, config()); setRooms(Array.isArray(res.data) ? res.data : []); } catch (err) { setError(err.response?.data?.message || 'Invite failed'); } };

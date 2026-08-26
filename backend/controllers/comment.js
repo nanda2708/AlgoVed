@@ -1,5 +1,6 @@
 import Comment from '../models/Comment.js';
 import Problem from '../models/Problem.js';
+import mongoose from 'mongoose';
 
 export const createComment = async (req, res) => {
   const { problemId, content } = req.body;
@@ -7,13 +8,17 @@ export const createComment = async (req, res) => {
   try {
     if (!userId) return res.status(401).json({ message: 'User not authenticated' });
 
+    if (!mongoose.isValidObjectId(problemId)) return res.status(400).json({ message: 'Invalid problem ID' });
+    if (typeof content !== 'string' || !content.trim()) return res.status(400).json({ message: 'Comment content is required' });
+    if (content.trim().length > 5_000) return res.status(413).json({ message: 'Comment is too large' });
+
     const problem = await Problem.findById(problemId);
     if (!problem) return res.status(404).json({ message: 'Problem not found' });
 
     const comment = new Comment({
       userId,
       problemId,
-      content,
+      content: content.trim(),
     });
     await comment.save();
     res.status(201).json(comment);
@@ -25,6 +30,7 @@ export const createComment = async (req, res) => {
 export const getComments = async (req, res) => {
   const { problemId } = req.query;
   try {
+    if (!mongoose.isValidObjectId(problemId)) return res.status(400).json({ message: 'Invalid problem ID' });
     const comments = await Comment.find({ problemId }).populate('userId', 'username').sort({ createdAt: -1 });
     res.json(comments);
   } catch (err) {

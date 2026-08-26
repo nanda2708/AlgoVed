@@ -1,8 +1,5 @@
 import './globals.css';
-import { Inter } from 'next/font/google';
 import ClientWrapper from './components/ClientWrapper';
-
-const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = {
   title: 'Online Judge - Code, Compete, Conquer',
@@ -18,7 +15,7 @@ export const metadata = {
 export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={`${inter.className} dark:bg-gray-950 min-h-screen flex flex-col`}>
+      <body className="min-h-screen font-sans dark:bg-gray-950">
         <ClientWrapper>{children}</ClientWrapper>
       </body>
     </html>

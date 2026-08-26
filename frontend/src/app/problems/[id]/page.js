@@ -22,6 +22,7 @@ export default function ProblemPage() {
   const [code, setCode] = useState(STARTER_CODE);
   const [customInput, setCustomInput] = useState('');
   const [output, setOutput] = useState('');
+  const [sampleResults, setSampleResults] = useState([]);
   const [verdict, setVerdict] = useState('');
   const [comment, setComment] = useState('');
   const [tab, setTab] = useState('problem');
@@ -70,7 +71,7 @@ export default function ProblemPage() {
   };
 
   const handleRun = async () => {
-    setError(''); setVerdict(''); setOutput(''); setRunning(true);
+    setError(''); setVerdict(''); setOutput(''); setSampleResults([]); setRunning(true);
     try {
       const result = await run(customInput);
       setOutput(result);
@@ -82,18 +83,22 @@ export default function ProblemPage() {
   };
 
   const handleSamples = async () => {
-    setError(''); setVerdict(''); setOutput(''); setRunning(true);
+    setError(''); setVerdict(''); setOutput(''); setSampleResults([]); setRunning(true);
     try {
       const samples = (problem?.testCases || []).filter((test) => !test.hidden);
       if (!samples.length) { setVerdict('No sample tests available'); return; }
-      let passed = 0;
-      let lastOutput = '';
+      const results = [];
       for (const test of samples) {
-        lastOutput = await run(test.input || '');
-        if (lastOutput.trim() !== String(test.output || '').trim()) break;
-        passed += 1;
+        try {
+          const actual = await run(test.input || '');
+          const expected = String(test.output || '');
+          results.push({ input: test.input || '', expected, actual, passed: actual.trim() === expected.trim() });
+        } catch (sampleError) {
+          results.push({ input: test.input || '', expected: String(test.output || ''), actual: sampleError.response?.data?.message || 'Execution failed', passed: false });
+        }
       }
-      setOutput(lastOutput);
+      const passed = results.filter((result) => result.passed).length;
+      setSampleResults(results);
       setVerdict(`${passed}/${samples.length} sample tests passed`);
     } catch (err) {
       setError(err.response?.data?.message || 'Sample execution failed');
@@ -150,7 +155,7 @@ export default function ProblemPage() {
               {!!problem.testCases?.length && <div className="mt-8"><h2 className="text-lg font-semibold">Examples</h2><div className="mt-3 space-y-3">{problem.testCases.filter((t) => !t.hidden).map((t, i) => <div key={i} className="rounded-lg border border-slate-800 bg-slate-900 p-4"><p className="text-xs font-medium uppercase tracking-wide text-slate-500">Input</p><pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-sm text-slate-200">{t.input}</pre><p className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">Output</p><pre className="mt-2 overflow-x-auto whitespace-pre-wrap text-sm text-slate-200">{t.output}</pre></div>)}</div></div>}
             </article>}
             {tab === 'submissions' && <div><h2 className="text-xl font-semibold">Your submissions</h2><div className="mt-4 space-y-2">{submissions.length ? submissions.map((s) => <div key={s._id} className="flex flex-wrap justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900 p-3"><span className={s.status === 'Accepted' ? 'text-emerald-400' : 'text-red-400'}>{s.status}</span><span className="text-xs text-slate-500">{s.createdAt ? new Date(s.createdAt).toLocaleString() : ''}</span></div>) : <p className="text-sm text-slate-500">No submissions yet.</p>}</div></div>}
-            {tab === 'discussion' && <div><h2 className="text-xl font-semibold">Discussion</h2><div className="mt-4 flex flex-col gap-2 sm:flex-row"><input value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} placeholder="Share a question or approach" className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-blue-500" /><button onClick={postComment} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500">Post</button></div><div className="mt-5 space-y-3">{comments.length ? comments.map((item) => <article key={item._id} className="rounded-lg border border-slate-800 bg-slate-900 p-4 text-sm text-slate-300">{item.content}</article>) : <p className="text-sm text-slate-500">No discussion yet.</p>}</div></div>}
+            {tab === 'discussion' && <div><h2 className="text-xl font-semibold">Discussion</h2><div className="mt-4"><label htmlFor="discussion-comment" className="text-sm text-slate-400">Share a question, explanation, or approach</label><textarea id="discussion-comment" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={2000} rows={6} placeholder="Write your comment here…" className="mt-2 min-h-36 w-full resize-y rounded-md border border-slate-700 bg-slate-900 p-3 text-sm leading-6 outline-none focus:border-blue-500" /><div className="mt-2 flex flex-wrap items-center justify-between gap-2"><span className="text-xs text-slate-500">{comment.length}/2000</span><button onClick={postComment} disabled={!comment.trim()} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50">Post comment</button></div></div><div className="mt-5 space-y-3">{comments.length ? comments.map((item) => <article key={item._id} className="rounded-lg border border-slate-800 bg-slate-900 p-4"><div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500"><span>{item.userId?.username || 'User'}</span><span>{item.createdAt ? new Date(item.createdAt).toLocaleString() : ''}</span></div><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-300">{item.content}</p></article>) : <p className="text-sm text-slate-500">No discussion yet.</p>}</div></div>}
           </div>
         </section>
 
@@ -158,7 +163,8 @@ export default function ProblemPage() {
           <div className="min-h-0 flex-1 p-2 sm:p-3"><MonacoCodeEditor code={code} setCode={setCode} language="cpp" height="100%" /></div>
           <div className="shrink-0 border-t border-slate-800 bg-slate-900 p-3 sm:p-4">
             <div className="flex flex-wrap gap-2"><button disabled={running || submitting} onClick={handleRun} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">{running ? 'Running…' : 'Run input'}</button><button disabled={running || submitting} onClick={handleSamples} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">Run samples</button><button disabled={running || submitting} onClick={handleSubmit} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium hover:bg-blue-500 disabled:opacity-50">{submitting ? 'Submitting…' : 'Submit'}</button><button disabled={reviewing} onClick={handleReview} className="rounded-md border border-slate-700 px-4 py-2 text-sm font-medium hover:bg-slate-800 disabled:opacity-50">{reviewing ? 'Reviewing…' : 'Review code'}</button></div>
-            <div className="mt-3 grid gap-3 md:grid-cols-2"><label><span className="text-xs text-slate-500">Custom input</span><textarea value={customInput} onChange={(e) => setCustomInput(e.target.value)} rows={3} maxLength={100000} className="mt-1 w-full resize-y rounded-md border border-slate-700 bg-slate-950 p-2 font-mono text-xs outline-none focus:border-blue-500" placeholder="Input passed to your program" /></label><div><span className="text-xs text-slate-500">Output</span><pre className="mt-1 min-h-20 max-h-32 overflow-auto rounded-md border border-slate-800 bg-slate-950 p-2 text-xs text-slate-200">{output || verdict || 'Run your code to see output.'}</pre></div></div>
+            <div className="mt-3 grid gap-3 md:grid-cols-2"><label><span className="text-xs text-slate-500">Custom input</span><textarea value={customInput} onChange={(e) => setCustomInput(e.target.value)} rows={3} maxLength={100000} className="mt-1 w-full resize-y rounded-md border border-slate-700 bg-slate-950 p-2 font-mono text-xs outline-none focus:border-blue-500" placeholder="Input passed to your program" /></label><div><span className="text-xs text-slate-500">Output</span><pre className="mt-1 min-h-20 max-h-32 overflow-auto whitespace-pre-wrap rounded-md border border-slate-800 bg-slate-950 p-2 text-xs text-slate-200">{output || (sampleResults.length ? verdict : 'Run your code to see output.')}</pre></div></div>
+            {sampleResults.length > 0 && <section className="mt-3 rounded-lg border border-slate-700 bg-slate-950 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-white">Sample test results</h2><span className="text-xs text-slate-400">{verdict}</span></div><div className="mt-3 space-y-3">{sampleResults.map((result, index) => <article key={index} className={`rounded-md border p-3 ${result.passed ? 'border-emerald-900/70 bg-emerald-950/20' : 'border-red-900/70 bg-red-950/20'}`}><div className="flex items-center justify-between gap-3"><span className="text-sm font-medium">Case {index + 1}</span><span className={result.passed ? 'text-xs font-medium text-emerald-400' : 'text-xs font-medium text-red-400'}>{result.passed ? 'Passed' : 'Failed'}</span></div><div className="mt-3 grid gap-3 sm:grid-cols-3"><div><p className="text-xs text-slate-500">Input</p><pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-slate-900 p-2 font-mono text-xs text-slate-200">{result.input || '(empty)'}</pre></div><div><p className="text-xs text-slate-500">Expected output</p><pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-slate-900 p-2 font-mono text-xs text-slate-200">{result.expected || '(empty)'}</pre></div><div><p className="text-xs text-slate-500">Your output</p><pre className="mt-1 max-h-28 overflow-auto whitespace-pre-wrap rounded bg-slate-900 p-2 font-mono text-xs text-slate-200">{result.actual || '(empty)'}</pre></div></div></article>)}</div></section>}
             {error && <p className="mt-2 text-sm text-red-400" role="alert">{error}</p>}
             {review && <div className="mt-3 max-h-56 overflow-auto rounded-lg border border-slate-700 bg-slate-950 p-4"><div className="mb-2 flex items-center justify-between"><span className="text-sm font-semibold">Code review</span><button onClick={() => setReview('')} className="text-xs text-slate-500 hover:text-white">Close</button></div><div className="prose prose-sm prose-invert max-w-none"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{review}</ReactMarkdown></div></div>}
           </div>

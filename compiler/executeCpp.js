@@ -22,6 +22,8 @@ const sanitizePath = (filePath) => {
   return resolvedPath;
 };
 
+const sanitizeCompilerError = (message, sourcePath) => String(message).split(sourcePath).join('source.cpp');
+
 const runProcess = (command, args, { timeout, cwd, inputPath = null } = {}) => new Promise((resolve, reject) => {
   const child = execFile(command, args, {
     cwd,
@@ -36,7 +38,8 @@ const runProcess = (command, args, { timeout, cwd, inputPath = null } = {}) => n
   }, (error, stdout, stderr) => {
     if (error) {
       const timedOut = error.killed || error.signal === 'SIGTERM' || error.code === 'ETIMEDOUT';
-      reject(new Error(timedOut ? 'Program execution timed out' : (stderr?.trim() || error.message)));
+      const outputExceeded = error.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER';
+      reject(new Error(timedOut ? 'Program execution timed out' : (outputExceeded ? 'Program output exceeded the limit' : (stderr?.trim() || error.message))));
       return;
     }
     if (stderr?.trim()) {
@@ -63,10 +66,14 @@ const executeCpp = (filepath, inputPath) => {
 
   return (async () => {
     try {
-      await runProcess('g++', [safeFilePath, '-std=c++17', '-O2', '-pipe', '-o', executablePath], {
-        timeout: 10000,
-        cwd: ROOT_DIR,
-      });
+      try {
+        await runProcess('g++', [safeFilePath, '-std=c++17', '-O2', '-pipe', '-o', executablePath], {
+          timeout: 10000,
+          cwd: ROOT_DIR,
+        });
+      } catch (error) {
+        throw new Error(sanitizeCompilerError(error.message, safeFilePath));
+      }
 
       return await runProcess(executablePath, [], {
         timeout: 3000,

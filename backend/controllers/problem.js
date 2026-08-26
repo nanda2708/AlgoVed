@@ -60,8 +60,10 @@ export const getProblem = async (req, res) => {
     const problem = await Problem.findById(req.params.id).lean();
     if (!problem) return res.status(404).json({ message: 'Problem not found' });
 
-    // Never expose hidden judge data to clients.
-    problem.testCases = (problem.testCases || []).filter((tc) => !tc.hidden).map(({ input, output }) => ({ input, output }));
+    // Hidden judge data is available only to an authenticated admin editing a problem.
+    if (!req.user.isAdmin) {
+      problem.testCases = (problem.testCases || []).filter((tc) => !tc.hidden).map(({ input, output }) => ({ input, output }));
+    }
     res.status(200).json(problem);
   } catch (error) {
     console.error('Get problem error:', error);

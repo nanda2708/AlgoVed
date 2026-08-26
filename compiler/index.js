@@ -1,5 +1,4 @@
 import express from 'express';
-import cors from 'cors';
 import dotenv from 'dotenv';
 import generateFile from './generateFile.js';
 import generateInputFile from './generateInputFile.js';
@@ -10,13 +9,11 @@ dotenv.config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 8000;
-const CLIENT_URL = process.env.NEXT_PUBLIC_CLIENT_URL || 'http://localhost:3000';
 const COMPILER_API_KEY = process.env.COMPILER_API_KEY;
 const MAX_CONCURRENT_RUNS = Math.max(1, Number(process.env.MAX_CONCURRENT_RUNS) || 2);
 let activeRuns = 0;
 
 app.disable('x-powered-by');
-app.use(cors({ origin: CLIENT_URL }));
 app.use(express.json({ limit: '256kb' }));
 
 const requireCompilerAuth = (req, res, next) => {
