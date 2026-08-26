@@ -4,19 +4,19 @@ import Link from 'next/link';
 
 const features = [
   {
-    title: 'Practice',
-    text: 'Work through problems at your own pace with clear statements, examples, and submissions.',
-    href: '/problems',
-  },
-  {
-    title: 'Compete',
-    text: 'Take part in contests, compare scores, and see how you stack up on the leaderboard.',
-    href: '/compete',
+    title: 'Run C++ code',
+    text: 'Write, compile, and execute C++ code in a secure browser-based development environment.',
+    href: '/compiler',
   },
   {
     title: 'Code together',
-    text: 'Open a room and solve problems with other people in real time.',
+    text: 'Collaborate with other developers in real time using shared coding rooms.',
     href: '/rooms',
+  },
+  {
+    title: 'Practice & judge',
+    text: 'Test your code against programming problems, hidden test cases, and automated judging.',
+    href: '/problems',
   },
 ];
 
@@ -26,19 +26,19 @@ export default function Home() {
       <section className="border-b border-slate-800">
         <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.15fr_.85fr] lg:items-center lg:px-8 lg:py-24">
           <div>
-            <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-blue-400">Competitive programming, without the clutter</p>
+            <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-blue-400">Developer tools for collaborative coding</p>
             <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-              Learn algorithms. Write code. Get better.
+              Write, run, review, and collaborate on code.
             </h1>
             <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-              AlgoVed gives you one practical place to practice programming problems, enter contests, run C++ code, and work with other developers.
+              AlgoVed is a developer workspace for running C++ code, collaborating in real-time coding rooms, and getting AI-assisted code review directly in the browser.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/problems" className="rounded-md bg-blue-500 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-400">
-                Browse problems
-              </Link>
-              <Link href="/compiler" className="rounded-md border border-slate-700 px-5 py-3 text-center text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900">
+              <Link href="/compiler" className="rounded-md bg-blue-500 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-400">
                 Open compiler
+              </Link>
+              <Link href="/rooms" className="rounded-md border border-slate-700 px-5 py-3 text-center text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900">
+                Open coding rooms
               </Link>
             </div>
           </div>
@@ -67,9 +67,9 @@ export default function Home() {
 
       <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
         <div className="max-w-2xl">
-          <p className="text-sm font-semibold text-blue-400">Everything you need</p>
-          <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Practice the way you actually code.</h2>
-          <p className="mt-3 text-slate-400">No unnecessary dashboards or decorative clutter. Just the tools you need to solve and improve.</p>
+          <p className="text-sm font-semibold text-blue-400">Developer workspace</p>
+          <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Tools for writing and collaborating on code.</h2>
+          <p className="mt-3 text-slate-400">Compile C++, work together in real time, review code with AI assistance, and validate solutions through automated judging.</p>
         </div>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
           {features.map((feature) => (
