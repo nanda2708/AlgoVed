@@ -1,14 +1,23 @@
-import './globals.css';
+﻿import './globals.css';
 import ClientWrapper from './components/ClientWrapper';
 
 export const metadata = {
-  title: 'Online Judge - Code, Compete, Conquer',
-  description: 'A SaaS platform for coding competitions, practice problems, and skill improvement.',
+  metadataBase: new URL('https://algoved.is-a.dev'),
+  title: 'AlgoVed - Collaborative Coding & C++ Development',
+  description:
+    'AlgoVed is a developer workspace for running C++ code, real-time collaborative coding, automated judging, and AI-assisted code review.',
   openGraph: {
-    title: 'Online Judge',
-    description: 'Join coding competitions and improve your skills with our online judge.',
-    url: 'https://yourdomain.com',
+    title: 'AlgoVed',
+    description:
+      'Write, run, review, and collaborate on code with AlgoVed.',
+    url: 'https://algoved.is-a.dev',
     type: 'website',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'AlgoVed',
+    description:
+      'Write, run, review, and collaborate on code with AlgoVed.',
   },
 };
 
