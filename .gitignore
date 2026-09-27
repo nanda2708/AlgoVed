@@ -16,3 +16,4 @@ compiler/outputs/
 
 *.exe
 *.out
+!.env.*.example
