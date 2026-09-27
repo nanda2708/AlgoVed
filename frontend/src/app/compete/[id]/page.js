@@ -1,51 +1,158 @@
 'use client';
 
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
-import axios from 'axios';
 import { AuthContext } from '../../context/AuthContext.js';
+import api, { errorMessage, isCancel } from '../../../lib/api';
+import { formatDateTime, formatDuration } from '../../../lib/time';
+import useCountdown from '../../components/useCountdown';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+const SCOREBOARD_REFRESH_MS = 30_000;
+const problemLabel = (index) => String.fromCharCode(65 + index);
+
+function ScoreCell({ cell }) {
+  if (!cell) return <td className="px-3 py-2 text-center text-slate-700">·</td>;
+  if (cell.solved) {
+    const wrong = cell.attempts - 1;
+    return (
+      <td className="px-3 py-2 text-center">
+        <div className="font-medium text-emerald-400">+{wrong || ''}</div>
+        <div className="text-[11px] text-slate-500">{cell.solvedAtMinutes}m</div>
+      </td>
+    );
+  }
+  return <td className="px-3 py-2 text-center font-medium text-red-400">−{cell.attempts}</td>;
+}
 
 export default function ContestPage() {
   const { id } = useParams();
-  const { authLoading, isLoggedIn } = useContext(AuthContext);
+  const { authLoading, isLoggedIn, user } = useContext(AuthContext);
   const router = useRouter();
   const [contest, setContest] = useState(null);
-  const [leaderboard, setLeaderboard] = useState([]);
+  const [board, setBoard] = useState({ problems: [], rows: [] });
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(true);
   const [joining, setJoining] = useState(false);
+  const reloadedAtStart = useRef(false);
 
-  const config = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }, timeout: 10000 });
+  const status = contest?.status;
+  const untilStart = useCountdown(contest?.startTime);
+  const untilEnd = useCountdown(contest?.endTime);
+
   const load = useCallback(async (signal) => {
-    const [contestRes, leaderboardRes] = await Promise.all([
-      axios.get(`${API_URL}/api/contests/${encodeURIComponent(id)}`, { ...config(), signal }),
-      axios.get(`${API_URL}/api/contests/${encodeURIComponent(id)}/leaderboard`, { ...config(), signal }),
+    const [contestRes, boardRes] = await Promise.all([
+      api.get(`/contests/${id}`, { signal }),
+      api.get(`/contests/${id}/leaderboard`, { signal }),
     ]);
     setContest(contestRes.data);
-    setLeaderboard(Array.isArray(leaderboardRes.data) ? leaderboardRes.data : []);
+    setBoard(boardRes.data);
   }, [id]);
 
-  useEffect(() => { if (!authLoading && !isLoggedIn) router.replace('/login'); }, [authLoading, isLoggedIn, router]);
   useEffect(() => {
-    if (authLoading || !isLoggedIn || !id) return undefined;
+    if (authLoading) return undefined;
+    if (!isLoggedIn) { router.replace('/login'); return undefined; }
     const controller = new AbortController();
-    load(controller.signal).catch((err) => { if (err.code !== 'ERR_CANCELED') setError(err.response?.data?.message || 'Failed to load contest.'); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
-    return () => controller.abort();
-  }, [authLoading, isLoggedIn, id, load]);
+    const refresh = () => load(controller.signal).catch((err) => { if (!isCancel(err)) setError(errorMessage(err, 'Failed to load contest')); });
+    refresh();
+    const timer = setInterval(refresh, SCOREBOARD_REFRESH_MS);
+    return () => { controller.abort(); clearInterval(timer); };
+  }, [authLoading, isLoggedIn, load, router]);
+
+  // Reload when the contest starts so the problem list appears without a manual refresh.
+  useEffect(() => {
+    if (status === 'upcoming' && untilStart <= 0 && !reloadedAtStart.current) {
+      reloadedAtStart.current = true;
+      // Small delay so the server clock has also passed the start time.
+      setTimeout(() => load().catch(() => {}), 2000);
+    }
+  }, [status, untilStart, load]);
 
   const join = async () => {
     setJoining(true); setError('');
-    try { await axios.post(`${API_URL}/api/contests/${encodeURIComponent(id)}/join`, {}, config()); await load(); }
-    catch (err) { setError(err.response?.data?.message || 'Unable to join contest.'); }
-    finally { setJoining(false); }
+    try {
+      await api.post(`/contests/${id}/join`);
+      await load();
+    } catch (err) {
+      setError(errorMessage(err, 'Unable to register'));
+    } finally {
+      setJoining(false);
+    }
   };
 
-  if (authLoading || loading) return <main className="flex min-h-[60vh] items-center justify-center bg-slate-950 text-slate-400">Loading contest…</main>;
-  if (!isLoggedIn) return null;
-  if (!contest) return <main className="flex min-h-[60vh] items-center justify-center bg-slate-950 px-4 text-center text-red-400">{error || 'Contest not found.'}</main>;
+  if (!contest) return <main className="p-8 text-center text-slate-400">{error || 'Loading contest…'}</main>;
 
-  return <main className="min-h-[calc(100vh-64px)] bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 lg:px-8"><div className="mx-auto max-w-5xl"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm text-blue-400">{contest.status}</p><h1 className="mt-1 text-3xl font-bold">{contest.title}</h1><p className="mt-2 text-sm text-slate-400">Ends {new Date(contest.endTime).toLocaleString()}</p></div>{contest.status === 'ongoing' && !contest.hasJoined && <button onClick={join} disabled={joining} className="rounded-md bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50">{joining ? 'Joining…' : 'Join contest'}</button>}</div>{error && <p className="mt-5 rounded-lg border border-red-900/60 bg-red-950/30 p-3 text-sm text-red-300" role="alert">{error}</p>}<section className="mt-8 rounded-xl border border-slate-800 bg-slate-900 p-5"><h2 className="font-semibold text-white">Problems</h2><div className="mt-4 space-y-2">{contest.problems?.length ? contest.problems.map((problem) => <div key={problem._id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-4"><div><p className="font-medium text-slate-100">{problem.title}</p><p className="mt-1 text-xs text-slate-500">{problem.difficulty} · C++17</p></div>{contest.hasJoined && contest.status === 'ongoing' ? <Link href={`/compete/${id}/${problem._id}`} className="rounded-md border border-slate-700 px-3 py-2 text-sm hover:bg-slate-800">Solve</Link> : <span className="text-xs text-slate-500">Join while active to solve</span>}</div>) : <p className="text-sm text-slate-400">No problems configured.</p>}</div></section><section className="mt-6 overflow-hidden rounded-xl border border-slate-800 bg-slate-900"><div className="border-b border-slate-800 px-5 py-4"><h2 className="font-semibold text-white">Leaderboard</h2></div>{leaderboard.length ? <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-950 text-slate-400"><tr><th className="px-5 py-3">Rank</th><th className="px-5 py-3">User</th><th className="px-5 py-3">Solved</th><th className="px-5 py-3">Score</th></tr></thead><tbody>{leaderboard.map((entry) => <tr key={entry.userId} className="border-t border-slate-800"><td className="px-5 py-3">{entry.rank}</td><td className="px-5 py-3">{entry.username}</td><td className="px-5 py-3">{entry.solved}</td><td className="px-5 py-3">{entry.score}</td></tr>)}</tbody></table></div> : <p className="p-5 text-sm text-slate-400">No accepted submissions yet.</p>}</section></div></main>;
+  const canSolve = contest.hasJoined && status === 'ongoing';
+
+  return (
+    <main className="min-h-[calc(100vh-64px)] px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-5xl">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold">{contest.title}</h1>
+            <p className="mt-2 text-sm text-slate-400">{formatDateTime(contest.startTime)} – {formatDateTime(contest.endTime)} · {contest.participantCount} registered</p>
+          </div>
+          <div className="text-right">
+            {status === 'upcoming' && <p className="font-mono text-lg">Starts in {formatDuration(untilStart)}</p>}
+            {status === 'ongoing' && <p className="font-mono text-lg">{formatDuration(untilEnd)} left</p>}
+            {status === 'ended' && <p className="text-sm text-slate-400">Contest over</p>}
+            {status !== 'ended' && !contest.hasJoined && (
+              <button onClick={join} disabled={joining} className="mt-2 rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50">{joining ? 'Registering…' : 'Register'}</button>
+            )}
+            {contest.hasJoined && status !== 'ended' && <p className="mt-1 text-xs text-emerald-400">You are registered</p>}
+          </div>
+        </div>
+        {error && <p className="mt-5 rounded-lg border border-red-900/60 bg-red-950/30 p-3 text-sm text-red-300" role="alert">{error}</p>}
+
+        <section className="mt-8">
+          <h2 className="font-semibold">Problems</h2>
+          {status === 'upcoming' && contest.problems.length === 0 ? (
+            <p className="mt-3 text-sm text-slate-400">{contest.problemCount} problems will be revealed when the contest starts.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-slate-800 rounded-xl border border-slate-800 bg-slate-900">
+              {contest.problems.map((problem, index) => (
+                <li key={problem._id} className="flex items-center justify-between gap-3 px-5 py-3">
+                  <span><span className="mr-3 font-mono text-slate-500">{problemLabel(index)}</span>{problem.title} <span className="ml-2 text-xs text-slate-500">{problem.difficulty}</span></span>
+                  {canSolve ? <Link href={`/compete/${id}/${problem._id}`} className="rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800">Solve</Link>
+                    : status === 'ended' ? <Link href={`/problems/${problem._id}`} className="text-sm text-blue-400 hover:underline">Practice</Link> : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="mt-8">
+          <div className="flex items-baseline justify-between">
+            <h2 className="font-semibold">Scoreboard</h2>
+            <p className="text-xs text-slate-500">Ties broken by penalty: minutes to solve + 10 per rejected attempt</p>
+          </div>
+          {board.rows.length === 0 ? <p className="mt-3 text-sm text-slate-400">No submissions yet.</p> : (
+            <div className="mt-3 overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead className="bg-slate-900 text-xs text-slate-400">
+                  <tr>
+                    <th className="px-3 py-2 text-left">#</th>
+                    <th className="px-3 py-2 text-left">User</th>
+                    <th className="px-3 py-2 text-right">Score</th>
+                    <th className="px-3 py-2 text-right">Penalty</th>
+                    {board.problems.map((problem, index) => <th key={problem._id} className="px-3 py-2 text-center" title={`${problem.title} (${problem.points} pts)`}>{problemLabel(index)}</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {board.rows.map((row) => (
+                    <tr key={row.userId} className={`border-t border-slate-800 ${row.username === user?.username ? 'bg-blue-500/5' : ''}`}>
+                      <td className="px-3 py-2 text-slate-400">{row.rank}</td>
+                      <td className="px-3 py-2 font-medium">{row.username}</td>
+                      <td className="px-3 py-2 text-right">{row.score}</td>
+                      <td className="px-3 py-2 text-right text-slate-400">{row.penalty}</td>
+                      {board.problems.map((problem) => <ScoreCell key={problem._id} cell={row.problems[problem._id]} />)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
 }

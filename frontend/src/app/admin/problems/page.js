@@ -1,352 +1,189 @@
 'use client';
-import { useState, useEffect, useContext, Suspense } from 'react';
+
+import { useContext, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../../context/AuthContext';
-import axios from 'axios';
+import api, { errorMessage } from '../../../lib/api';
 
-// Ensure NEXT_PUBLIC_API_URL is set in Vercel environment variables or .env.local
-// Example: NEXT_PUBLIC_API_URL=https://your-backend-api.com
-const AdminProblems = () => {
+const emptyTest = () => ({ input: '', output: '', hidden: true });
+const emptyForm = () => ({
+  title: '',
+  description: '',
+  difficulty: 'Easy',
+  tags: '',
+  timeLimitMs: 2000,
+  memoryLimitMb: 256,
+  testCases: [{ input: '', output: '', hidden: false }, emptyTest()],
+});
+
+const inputClass = 'w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white outline-none focus:border-blue-500';
+
+export default function AdminProblems() {
   const { isLoggedIn, authLoading, isAdmin } = useContext(AuthContext);
-  const [problems, setProblems] = useState([]);
-  const [filteredProblems, setFilteredProblems] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [filterDifficulty, setFilterDifficulty] = useState('All');
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    difficulty: 'Easy',
-    tags: [],
-    testCases: [{ input: '', output: '', hidden: false }],
-  });
-  const [editingId, setEditingId] = useState(null);
-  const [tagsInput, setTagsInput] = useState('');
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
-  const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const [problems, setProblems] = useState([]);
+  const [form, setForm] = useState(emptyForm);
+  const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (authLoading) return;
-    if (!isLoggedIn) {
-      router.push('/login');
-      return;
-    }
-    if (!isAdmin) {
-      setLoading(false);
-      return;
-    }
+    if (!isLoggedIn) { router.replace('/login'); return; }
+    if (!isAdmin) return;
+    api.get('/problems').then(({ data }) => setProblems(data)).catch((err) => setError(errorMessage(err, 'Failed to load problems')));
+  }, [authLoading, isLoggedIn, isAdmin, router]);
 
-    let isMounted = true;
-    const fetchProblems = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('No token found');
-        const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/problems`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (isMounted) {
-          setProblems(res.data);
-          setFilteredProblems(res.data);
-        }
-      } catch (err) {
-        if (isMounted) setError(err.response?.data?.message || 'Failed to load problems');
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
+  const visible = useMemo(() => problems.filter((p) => p.title.toLowerCase().includes(search.trim().toLowerCase())), [problems, search]);
 
-    fetchProblems();
-    return () => {
-      isMounted = false;
-    };
-  }, [isLoggedIn, authLoading, isAdmin, router]);
+  const setField = (name, value) => setForm((current) => ({ ...current, [name]: value }));
+  const setTest = (index, name, value) => setForm((current) => ({
+    ...current,
+    testCases: current.testCases.map((tc, i) => (i === index ? { ...tc, [name]: value } : tc)),
+  }));
 
-  useEffect(() => {
-    let filtered = problems;
-    if (filterDifficulty !== 'All') {
-      filtered = filtered.filter(p => p.difficulty === filterDifficulty);
-    }
-    if (searchQuery.trim() !== '') {
-      filtered = filtered.filter(p => p.title.toLowerCase().includes(searchQuery.toLowerCase()));
-    }
-    setFilteredProblems(filtered);
-  }, [searchQuery, filterDifficulty, problems]);
+  const reset = () => { setForm(emptyForm()); setEditingId(null); };
 
-  const showToast = (message) => {
-    setToast(message);
-    setTimeout(() => setToast(''), 3000);
-  };
-
-  const handleFormChange = (e, index = null) => {
-    if (index !== null) {
-      const newTestCases = [...form.testCases];
-      newTestCases[index][e.target.name] = e.target.name === 'hidden' ? e.target.checked : e.target.value;
-      setForm({ ...form, testCases: newTestCases });
-    } else {
-      setForm({ ...form, [e.target.name]: e.target.value });
-    }
-  };
-
-  const addTestCase = () => {
-    setForm({ ...form, testCases: [...form.testCases, { input: '', output: '', hidden: false }] });
-  };
-
-  const handleTagsChange = (e) => {
-    const rawTags = e.target.value;
-    setTagsInput(rawTags);
-    const tags = [...new Set(rawTags.split(',').map((tag) => tag.trim()).filter(Boolean))];
-    setForm({ ...form, tags });
-  };
-
-  const removeTestCase = (index) => {
-    setForm({ ...form, testCases: form.testCases.filter((_, i) => i !== index) });
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
+  const startEdit = async (id) => {
+    setError(''); setMessage('');
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
-      if (editingId) {
-        const res = await axios.put(`${process.env.NEXT_PUBLIC_API_URL}/api/problems/${editingId}`, form, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setProblems(problems.map((p) => (p._id === editingId ? res.data.problem : p)));
-        showToast('Problem updated successfully');
-        setEditingId(null);
-      } else {
-        const res = await axios.post(`${process.env.NEXT_PUBLIC_API_URL}/api/problems`, form, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setProblems([res.data.problem, ...problems]);
-        showToast('Problem created successfully');
-      }
-      setForm({ title: '', description: '', difficulty: 'Easy', tags: [], testCases: [{ input: '', output: '', hidden: false }] });
-      setTagsInput('');
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save problem');
-    }
-  };
-
-  const handleEdit = async (problem) => {
-    setError('');
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
-      const res = await axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/problems/${problem._id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const fullProblem = res.data;
+      const { data } = await api.get(`/problems/${id}`);
       setForm({
-        title: fullProblem.title,
-        description: fullProblem.description,
-        difficulty: fullProblem.difficulty,
-        tags: Array.isArray(fullProblem.tags) ? fullProblem.tags : [],
-        testCases: fullProblem.testCases?.length ? fullProblem.testCases : [{ input: '', output: '', hidden: false }],
+        title: data.title,
+        description: data.description,
+        difficulty: data.difficulty,
+        tags: (data.tags || []).join(', '),
+        timeLimitMs: data.timeLimitMs || 2000,
+        memoryLimitMb: data.memoryLimitMb || 256,
+        testCases: data.testCases.map(({ input, output, hidden }) => ({ input, output, hidden: Boolean(hidden) })),
       });
-      setTagsInput((fullProblem.tags || []).join(', '));
-      setEditingId(fullProblem._id);
+      setEditingId(id);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to load problem details for editing');
+      setError(errorMessage(err, 'Failed to load problem'));
     }
   };
 
-  const handleDelete = async (id) => {
+  const save = async (event) => {
+    event.preventDefault();
+    setSaving(true); setError(''); setMessage('');
+    const payload = {
+      ...form,
+      tags: form.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+      timeLimitMs: Number(form.timeLimitMs),
+      memoryLimitMb: Number(form.memoryLimitMb),
+    };
     try {
-      const token = localStorage.getItem('token');
-      if (!token) throw new Error('No token found');
-      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/api/problems/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setProblems(problems.filter((p) => p._id !== id));
-      showToast('Problem deleted successfully');
+      if (editingId) {
+        const { data } = await api.put(`/problems/${editingId}`, payload);
+        setProblems((items) => items.map((p) => (p._id === editingId ? data.problem : p)));
+        setMessage('Problem updated.');
+      } else {
+        const { data } = await api.post('/problems', payload);
+        setProblems((items) => [data.problem, ...items]);
+        setMessage('Problem created.');
+      }
+      reset();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to delete problem');
+      setError(errorMessage(err, 'Failed to save problem'));
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (authLoading || loading) return <div className="text-center mt-10 text-gray-600">Loading...</div>;
-  if (!isLoggedIn) return null;
-  if (!isAdmin) {
-    return (
-      <div className="max-w-4xl mx-auto p-4 mt-10 text-center">
-        <h1 className="text-3xl font-bold mb-4 text-red-500" role="alert">Admin Access Required</h1>
-        <p className="text-gray-600 mb-4">You do not have permission to access this page.</p>
-        <button
-          onClick={() => router.push('/problems')}
-          className="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600"
-        >
-          Go to Problems
-        </button>
-      </div>
-    );
-  }
+  const remove = async (problem) => {
+    if (!window.confirm(`Delete "${problem.title}"? Existing submissions will keep pointing at a deleted problem.`)) return;
+    try {
+      await api.delete(`/problems/${problem._id}`);
+      setProblems((items) => items.filter((p) => p._id !== problem._id));
+      if (editingId === problem._id) reset();
+    } catch (err) {
+      setError(errorMessage(err, 'Failed to delete problem'));
+    }
+  };
+
+  if (authLoading) return null;
+  if (!isAdmin) return <main className="p-8 text-center text-slate-400">This page is only available to administrators.</main>;
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      {toast && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-md z-50 animate-slide-down">
-          {toast}
+    <main className="mx-auto max-w-5xl px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h1 className="text-2xl font-bold">{editingId ? 'Edit problem' : 'New problem'}</h1>
+        <Link href="/admin/contests" className="text-sm text-blue-400 hover:underline">Schedule a contest →</Link>
+      </div>
+
+      <form onSubmit={save} className="mt-6 space-y-5 rounded-xl border border-slate-800 bg-slate-900 p-5">
+        <div className="grid gap-4 sm:grid-cols-[1fr_160px]">
+          <label className="block"><span className="text-sm text-slate-400">Title</span><input value={form.title} onChange={(e) => setField('title', e.target.value)} required className={`mt-1 ${inputClass}`} /></label>
+          <label className="block"><span className="text-sm text-slate-400">Difficulty</span>
+            <select value={form.difficulty} onChange={(e) => setField('difficulty', e.target.value)} className={`mt-1 ${inputClass}`}>
+              <option>Easy</option><option>Medium</option><option>Hard</option>
+            </select>
+          </label>
         </div>
-      )}
-
-      <h1 className="text-4xl font-bold mb-8 text-center text-gray-900 dark:text-gray-100">Manage Problems</h1>
-
-      {error && (
-        <p className="text-red-500 mb-6 text-center font-medium" role="alert">{error}</p>
-      )}
-
-      <form onSubmit={handleSubmit} className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-xl shadow-lg mb-10 grid gap-6">
-        <input
-          type="text"
-          name="title"
-          value={form.title}
-          onChange={handleFormChange}
-          placeholder="Problem Title"
-          className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-900 text-black dark:text-white"
-          required
-        />
-        <textarea
-          name="description"
-          value={form.description}
-          onChange={handleFormChange}
-          rows="4"
-          placeholder="Problem Description"
-          className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none resize-none bg-white dark:bg-gray-900 text-black dark:text-white"
-          required
-        />
-        <select
-          name="difficulty"
-          value={form.difficulty}
-          onChange={handleFormChange}
-          className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-900 text-black dark:text-white"
-        >
-          <option value="Easy">Easy</option>
-          <option value="Medium">Medium</option>
-          <option value="Hard">Hard</option>
-        </select>
-        <label className="grid gap-2 text-sm font-medium text-gray-700 dark:text-gray-200">
-          Tags
-          <input
-            type="text"
-            value={tagsInput}
-            onChange={handleTagsChange}
-            placeholder="arrays, dynamic programming, graphs"
-            className="w-full border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white dark:bg-gray-900 text-black dark:text-white"
-          />
-          <span className="font-normal text-xs text-gray-500">Separate tags with commas.</span>
+        <label className="block">
+          <span className="text-sm text-slate-400">Statement (Markdown)</span>
+          <textarea value={form.description} onChange={(e) => setField('description', e.target.value)} rows={10} required className={`mt-1 font-mono ${inputClass}`} />
         </label>
-
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Test Cases</h3>
-          {form.testCases.map((tc, i) => (
-            <div key={i} className="grid sm:grid-cols-[1fr_1fr_auto] gap-4 items-center">
-              <input
-                type="text"
-                name="input"
-                value={tc.input}
-                onChange={(e) => handleFormChange(e, i)}
-                placeholder="Input"
-                className="border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-black dark:text-white"
-                required
-              />
-              <input
-                type="text"
-                name="output"
-                value={tc.output}
-                onChange={(e) => handleFormChange(e, i)}
-                placeholder="Output"
-                className="border border-gray-300 dark:border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-900 text-black dark:text-white"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => removeTestCase(i)}
-                disabled={form.testCases.length === 1}
-                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 disabled:opacity-50 h-[42px]"
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          <button
-            type="button"
-            onClick={addTestCase}
-            className="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition"
-          >
-            Add Test Case
-          </button>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label className="block"><span className="text-sm text-slate-400">Tags (comma separated)</span><input value={form.tags} onChange={(e) => setField('tags', e.target.value)} className={`mt-1 ${inputClass}`} /></label>
+          <label className="block"><span className="text-sm text-slate-400">Time limit (ms)</span><input type="number" min={100} max={10000} step={100} value={form.timeLimitMs} onChange={(e) => setField('timeLimitMs', e.target.value)} className={`mt-1 ${inputClass}`} /></label>
+          <label className="block"><span className="text-sm text-slate-400">Memory limit (MB)</span><input type="number" min={16} max={1024} value={form.memoryLimitMb} onChange={(e) => setField('memoryLimitMb', e.target.value)} className={`mt-1 ${inputClass}`} /></label>
         </div>
 
-        <button type="submit" className="w-full sm:w-fit bg-blue-600 text-white px-6 py-3 rounded-lg hover:bg-blue-700 transition">
-          {editingId ? 'Update Problem' : 'Create Problem'}
-        </button>
+        <fieldset>
+          <legend className="text-sm text-slate-400">Tests <span className="text-slate-500">— visible tests are shown as examples; hidden tests are only used for judging</span></legend>
+          <div className="mt-2 space-y-3">
+            {form.testCases.map((tc, i) => (
+              <div key={i} className="rounded-lg border border-slate-800 bg-slate-950 p-3">
+                <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
+                  <span>Test {i + 1}</span>
+                  <span className="flex items-center gap-4">
+                    <label className="flex items-center gap-1.5"><input type="checkbox" checked={tc.hidden} onChange={(e) => setTest(i, 'hidden', e.target.checked)} className="accent-blue-500" />Hidden</label>
+                    <button type="button" disabled={form.testCases.length === 1} onClick={() => setField('testCases', form.testCases.filter((_, j) => j !== i))} className="text-red-400 hover:text-red-300 disabled:opacity-40">Remove</button>
+                  </span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <textarea value={tc.input} onChange={(e) => setTest(i, 'input', e.target.value)} rows={3} placeholder="Input" required className={`font-mono text-xs ${inputClass}`} />
+                  <textarea value={tc.output} onChange={(e) => setTest(i, 'output', e.target.value)} rows={3} placeholder="Expected output" required className={`font-mono text-xs ${inputClass}`} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={() => setField('testCases', [...form.testCases, emptyTest()])} className="mt-3 rounded-md border border-slate-700 px-3 py-1.5 text-sm hover:bg-slate-800">Add test</button>
+        </fieldset>
+
+        {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
+        {message && <p className="text-sm text-emerald-400">{message}</p>}
+        <div className="flex gap-2">
+          <button type="submit" disabled={saving} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50">{saving ? 'Saving…' : editingId ? 'Save changes' : 'Create problem'}</button>
+          {editingId && <button type="button" onClick={reset} className="rounded-md px-4 py-2 text-sm text-slate-400 hover:bg-slate-800">Cancel</button>}
+        </div>
       </form>
 
-      <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-6">
-        <input
-          type="text"
-          placeholder="Search by title..."
-          className="w-full sm:w-1/2 border px-4 py-2 rounded-lg border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-black dark:text-white"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
-        <select
-          className="w-full sm:w-fit border px-4 py-2 rounded-lg border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-black dark:text-white"
-          value={filterDifficulty}
-          onChange={(e) => setFilterDifficulty(e.target.value)}
-        >
-          <option value="All">All Difficulties</option>
-          <option value="Easy">Easy</option>
-          <option value="Medium">Medium</option>
-          <option value="Hard">Hard</option>
-        </select>
-      </div>
-
-      {filteredProblems.length === 0 ? (
-        <p className="text-gray-500 text-center">No problems match your filters.</p>
-      ) : (
-        <div className="grid gap-6">
-          {filteredProblems.map((problem) => (
-            <div
-              key={problem._id}
-              className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-md flex flex-col sm:flex-row justify-between gap-4"
-            >
-              <div>
-                <h3 className="text-xl font-bold text-blue-600 hover:underline">
-                  <a href={`/problems/${problem._id}`}>{problem.title}</a>
-                </h3>
-                <p className="text-sm text-gray-500 mt-1">Difficulty: {problem.difficulty}</p>
-                {problem.tags?.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{problem.tags.map((tag) => <span key={tag} className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">{tag}</span>)}</div>}
-              </div>
-              <div className="flex gap-2">
-                <button onClick={() => handleEdit(problem)} className="bg-yellow-500 text-white px-4 py-2 rounded-lg hover:bg-yellow-600">
-                  Edit
-                </button>
-                <button onClick={() => handleDelete(problem._id)} className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600">
-                  Delete
-                </button>
-              </div>
-            </div>
-          ))}
+      <section className="mt-10">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold">All problems ({problems.length})</h2>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter by title" className={`max-w-xs ${inputClass}`} />
         </div>
-      )}
-    </div>
-  );
-};
-
-// Wrap AdminProblems in Suspense for useRouter
-export default function AdminProblemsWrapper() {
-  return (
-    <Suspense fallback={
-      <div className="text-center mt-10 text-gray-600">
-        Loading...
-      </div>
-    }>
-      <AdminProblems />
-    </Suspense>
+        <ul className="mt-3 divide-y divide-slate-800 rounded-xl border border-slate-800 bg-slate-900">
+          {visible.map((problem) => (
+            <li key={problem._id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+              <div className="min-w-0">
+                <Link href={`/problems/${problem._id}`} className="font-medium hover:text-blue-300">{problem.title}</Link>
+                <p className="text-xs text-slate-500">{problem.difficulty}{problem.tags?.length ? ` · ${problem.tags.join(', ')}` : ''} · <span className="font-mono">{problem._id}</span></p>
+              </div>
+              <div className="flex gap-2 text-sm">
+                <button onClick={() => startEdit(problem._id)} className="rounded-md px-3 py-1.5 hover:bg-slate-800">Edit</button>
+                <button onClick={() => remove(problem)} className="rounded-md px-3 py-1.5 text-red-400 hover:bg-slate-800">Delete</button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    </main>
   );
 }

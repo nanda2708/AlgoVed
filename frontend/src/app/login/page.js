@@ -1,47 +1,34 @@
 'use client';
-import { useState, useEffect, useContext, Suspense } from 'react';
-import axios from 'axios';
+
+import { useContext, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
+import api, { errorMessage } from '../../lib/api';
+import { AuthCard, Field } from '../components/AuthCard';
 
-const Login = () => {
+export default function Login() {
   const { isLoggedIn, authLoading, login } = useContext(AuthContext);
-  const [formData, setFormData] = useState({ username: '', password: '' });
+  const router = useRouter();
+  const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
   useEffect(() => {
-    if (!authLoading && isLoggedIn) router.push('/problems');
+    if (!authLoading && isLoggedIn) router.replace('/problems');
   }, [isLoggedIn, authLoading, router]);
 
-  const handleChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
-  };
+  const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError('');
-
-    if (!formData.username.trim() || !formData.password.trim()) {
-      setError('Username and password are required');
-      return;
-    }
-
-    if (!API_URL) {
-      setError('Frontend API URL is not configured');
-      return;
-    }
-
-    setLoading(true);
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError(''); setLoading(true);
     try {
-      const res = await axios.post(`${API_URL}/api/auth/login`, formData);
-      await login(res.data.token);
+      const { data } = await api.post('/auth/login', form);
+      await login(data.token);
       router.push('/problems');
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Login failed');
-    } finally {
+      setError(errorMessage(err, 'Login failed'));
       setLoading(false);
     }
   };
@@ -49,34 +36,13 @@ const Login = () => {
   if (authLoading || isLoggedIn) return null;
 
   return (
-    <div className="max-w-md mx-auto mt-16 p-6 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl shadow">
-      <h1 className="text-3xl font-bold text-center text-gray-800 dark:text-white mb-6">Login to AlgoVed</h1>
-      {error && <p className="text-red-500 text-sm mb-4 text-center">{error}</p>}
-      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <div>
-          <label htmlFor="username" className="block text-sm text-gray-700 dark:text-gray-300 mb-1">Username</label>
-          <input id="username" name="username" type="text" placeholder="Username" value={formData.username} onChange={handleChange} required className="w-full p-2 rounded bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm text-black dark:text-white" />
-        </div>
-        <div>
-          <label htmlFor="password" className="block text-sm text-gray-700 dark:text-gray-300 mb-1">Password</label>
-          <input id="password" name="password" type="password" placeholder="Password" value={formData.password} onChange={handleChange} required className="w-full p-2 rounded bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-sm text-black dark:text-white" />
-        </div>
-        <button type="submit" disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 rounded transition disabled:bg-blue-300">
-          {loading ? 'Logging in...' : 'Login'}
-        </button>
+    <AuthCard title="Log in" footer={<>New here? <Link href="/signup" className="text-blue-400 hover:underline">Create an account</Link></>}>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Username or email" name="username" autoComplete="username" value={form.username} onChange={update} required />
+        <Field label="Password" name="password" type="password" autoComplete="current-password" value={form.password} onChange={update} required />
+        {error && <p className="text-sm text-red-400" role="alert">{error}</p>}
+        <button type="submit" disabled={loading} className="w-full rounded-md bg-blue-600 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50">{loading ? 'Logging in…' : 'Log in'}</button>
       </form>
-      <p className="mt-4 text-center text-sm text-gray-600 dark:text-gray-400">
-        Don’t have an account?{' '}
-        <a href="/signup" className="text-blue-500 hover:underline">Sign Up</a>
-      </p>
-    </div>
-  );
-};
-
-export default function LoginWrapper() {
-  return (
-    <Suspense fallback={<div className="max-w-md mx-auto mt-16 p-6 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl shadow text-center text-gray-600 dark:text-gray-400">Loading...</div>}>
-      <Login />
-    </Suspense>
+    </AuthCard>
   );
 }

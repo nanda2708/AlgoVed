@@ -1,53 +1,56 @@
-import axios from 'axios';
+import mongoose from 'mongoose';
+import Problem from '../models/Problem.js';
+import { toPublicResults } from '../models/testCaseResult.js';
+import { evaluate, MAX_INPUT_LENGTH, reviewCode as requestReview, runCode as requestRun, validateCode } from '../services/judge.js';
 
-const MAX_CODE_LENGTH = 100_000;
-const MAX_INPUT_LENGTH = 100_000;
-
-const compilerRequest = async (path, payload) => {
-  const baseUrl = process.env.COMPILER_API_URL?.replace(/\/$/, '');
-  const key = process.env.COMPILER_API_KEY;
-  if (!baseUrl || !key) {
-    const error = new Error('Compiler service is not configured');
-    error.status = 503;
-    throw error;
-  }
-
-  return axios.post(`${baseUrl}${path}`, payload, {
-    headers: { 'x-compiler-key': key },
-    timeout: 15_000,
-    maxContentLength: 1_000_000,
-    maxBodyLength: 1_000_000,
-  });
+const sendJudgeError = (res, error, fallback) => {
+  if (!error.status) console.error(fallback, error);
+  res.status(error.status || 500).json({ message: error.status ? error.message : fallback });
 };
 
 export const runCode = async (req, res) => {
   const { language = 'cpp', code, input = '' } = req.body || {};
-  if (language !== 'cpp') return res.status(400).json({ message: 'Only C++ execution is currently supported' });
-  if (typeof code !== 'string' || !code.trim()) return res.status(400).json({ message: 'Code is required' });
-  if (code.length > MAX_CODE_LENGTH) return res.status(413).json({ message: 'Code is too large' });
+  const invalid = validateCode(code, language);
+  if (invalid) return res.status(400).json({ message: invalid });
   if (typeof input !== 'string' || input.length > MAX_INPUT_LENGTH) return res.status(413).json({ message: 'Input is too large' });
 
   try {
-    const response = await compilerRequest('/run', { language, code, input });
-    return res.json({ success: true, output: response.data?.output ?? '' });
+    const result = await requestRun({ code, input });
+    return res.json(result);
   } catch (error) {
-    const status = error.status || error.response?.status || (error.code === 'ECONNABORTED' ? 504 : 502);
-    const message = error.response?.data?.error || error.message || 'Code execution failed';
-    return res.status(status).json({ message });
+    return sendJudgeError(res, error, 'Code execution failed');
+  }
+};
+
+// Runs the code against a problem's sample (non-hidden) tests without recording a submission.
+export const runSamples = async (req, res) => {
+  const { problemId, language = 'cpp', code } = req.body || {};
+  const invalid = validateCode(code, language);
+  if (invalid) return res.status(400).json({ message: invalid });
+  if (!mongoose.isValidObjectId(problemId)) return res.status(400).json({ message: 'Invalid problem ID' });
+
+  try {
+    const problem = await Problem.findById(problemId).lean();
+    if (!problem) return res.status(404).json({ message: 'Problem not found' });
+    const samples = (problem.testCases || []).filter((tc) => !tc.hidden);
+    if (!samples.length) return res.status(422).json({ message: 'This problem has no sample tests' });
+
+    const result = await evaluate({ code, problem, testCases: samples, stopOnFailure: false });
+    return res.json({ ...result, testCaseResults: toPublicResults(result.testCaseResults) });
+  } catch (error) {
+    return sendJudgeError(res, error, 'Sample run failed');
   }
 };
 
 export const reviewCode = async (req, res) => {
   const { code } = req.body || {};
-  if (typeof code !== 'string' || !code.trim()) return res.status(400).json({ message: 'Code is required' });
-  if (code.length > MAX_CODE_LENGTH) return res.status(413).json({ message: 'Code is too large' });
+  const invalid = validateCode(code);
+  if (invalid) return res.status(400).json({ message: invalid });
 
   try {
-    const response = await compilerRequest('/ai-review', { code });
-    return res.json({ success: true, review: response.data?.review ?? '' });
+    const { review } = await requestReview(code);
+    return res.json({ review: review || '' });
   } catch (error) {
-    const status = error.status || error.response?.status || 502;
-    const message = error.response?.data?.error || error.message || 'AI review failed';
-    return res.status(status).json({ message });
+    return sendJudgeError(res, error, 'Code review failed');
   }
 };

@@ -3,7 +3,7 @@
 import { useState, useEffect, useContext } from 'react';
 import { useRouter } from 'next/navigation';
 import { AuthContext } from '../context/AuthContext';
-import axios from 'axios';
+import api, { errorMessage, isCancel } from '../../lib/api';
 import ProblemFilter from '../components/ProblemFilter';
 
 export default function Problems() {
@@ -12,7 +12,6 @@ export default function Problems() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const router = useRouter();
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
     if (authLoading) return;
@@ -24,18 +23,12 @@ export default function Problems() {
     const controller = new AbortController();
     const fetchProblems = async () => {
       try {
-        const token = localStorage.getItem('token');
-        if (!token) throw new Error('Authentication required');
-        const res = await axios.get(`${API_URL}/api/problems`, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: controller.signal,
-          timeout: 10000,
-        });
-        setProblems(Array.isArray(res.data) ? res.data : []);
+        const res = await api.get('/problems', { signal: controller.signal });
+        setProblems(res.data);
         setError('');
       } catch (err) {
-        if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
-        setError(err.response?.data?.message || err.message || 'Failed to load problems');
+        if (isCancel(err)) return;
+        setError(errorMessage(err, 'Failed to load problems'));
       } finally {
         if (!controller.signal.aborted) setLoading(false);
       }
@@ -43,7 +36,7 @@ export default function Problems() {
 
     fetchProblems();
     return () => controller.abort();
-  }, [isLoggedIn, authLoading, router, API_URL]);
+  }, [isLoggedIn, authLoading, router]);
 
   if (authLoading || loading) {
     return (
@@ -71,9 +64,8 @@ export default function Problems() {
   return (
     <section className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
       <div className="mb-8">
-        <p className="text-sm font-medium text-blue-400">Practice</p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight text-white sm:text-4xl">Problems</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">Build your skills with focused algorithm and data-structure problems.</p>
+        <h1 className="text-3xl font-bold tracking-tight text-white">Problems</h1>
+        <p className="mt-2 max-w-2xl text-sm text-slate-400">Solutions are compiled with g++ (C++17, -O2) and judged against hidden tests.</p>
       </div>
 
       {problems.length === 0 ? (

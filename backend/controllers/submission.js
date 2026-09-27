@@ -1,96 +1,30 @@
-import axios from 'axios';
 import mongoose from 'mongoose';
 import Submission from '../models/Submission.js';
 import Problem from '../models/Problem.js';
-import { v4 as uuidv4 } from 'uuid';
+import { toPublicResults } from '../models/testCaseResult.js';
+import { evaluate, validateCode } from '../services/judge.js';
 
-const normalizeOutput = (value) => String(value ?? '').replace(/\r\n/g, '\n').trim();
+const toPublicSubmission = ({ _id, problemId, language, status, passed, total, timeMs, compileError, testCaseResults, createdAt, code }) => ({
+  _id, problemId, language, status, passed, total, timeMs, compileError, createdAt, code,
+  testCaseResults: toPublicResults(testCaseResults),
+});
 
 export const createSubmission = async (req, res) => {
-  const { problemId, code, language } = req.body;
-  const userId = req.user.userId;
-
+  const { problemId, code, language } = req.body || {};
   try {
-    if (!userId) return res.status(401).json({ message: 'User not authenticated' });
     if (!mongoose.isValidObjectId(problemId)) return res.status(400).json({ message: 'Invalid problem ID' });
-    if (typeof code !== 'string' || !code.trim()) return res.status(400).json({ message: 'Code is required' });
-    if (code.length > 100_000) return res.status(413).json({ message: 'Code is too large' });
-    if (typeof language !== 'string' || language !== 'cpp') return res.status(400).json({ message: 'Only C++ submissions are currently supported' });
-    if (!process.env.COMPILER_API_URL || !process.env.COMPILER_API_KEY) return res.status(503).json({ message: 'Compiler service is not configured' });
+    const invalid = validateCode(code, language);
+    if (invalid) return res.status(400).json({ message: invalid });
 
     const problem = await Problem.findById(problemId).lean();
     if (!problem) return res.status(404).json({ message: 'Problem not found' });
-    if (!Array.isArray(problem.testCases) || problem.testCases.length === 0) {
-      return res.status(422).json({ message: 'Problem has no test cases configured' });
-    }
+    if (!problem.testCases?.length) return res.status(422).json({ message: 'Problem has no test cases configured' });
 
-    const compilerUrl = process.env.COMPILER_API_URL.replace(/\/$/, '');
-    const compilerHeaders = { 'x-compiler-key': process.env.COMPILER_API_KEY };
-    const results = [];
-
-    for (const tc of problem.testCases) {
-      try {
-        const response = await axios.post(`${compilerUrl}/run`, {
-          language,
-          code,
-          input: tc.input,
-        }, {
-          headers: compilerHeaders,
-          timeout: 15_000,
-          maxContentLength: 1_000_000,
-          maxBodyLength: 1_000_000,
-        });
-
-        const actualOutput = response.data?.output ?? '';
-        const passed = normalizeOutput(actualOutput) === normalizeOutput(tc.output);
-        results.push({
-          input: tc.input,
-          expected: tc.output,
-          actual: actualOutput,
-          passed,
-          hidden: Boolean(tc.hidden),
-          status: passed ? 'Accepted' : 'Wrong Answer',
-        });
-      } catch (err) {
-        results.push({
-          input: tc.input,
-          expected: tc.output,
-          actual: err.response?.data?.error || err.message,
-          passed: false,
-          hidden: Boolean(tc.hidden),
-          status: 'Error',
-        });
-      }
-
-      if (!results[results.length - 1].passed) break;
-    }
-
-    const passedAll = results.length === problem.testCases.length && results.every((r) => r.passed);
-    const status = passedAll ? 'Accepted' : results.some((r) => r.status === 'Error' || r.status === 'Busy') ? 'Error' : 'Wrong Answer';
-
-    const submission = await Submission.create({
-      userId,
-      problemId,
-      codeUUID: uuidv4(),
-      language,
-      status,
-      testCaseResults: results,
-    });
-
-    const publicResults = results.map(({ input, expected, actual, passed, hidden, status: testStatus }) => (
-      hidden ? { passed, status: testStatus } : { input, expected, actual, passed, status: testStatus }
-    ));
-
-    res.status(201).json({
-      _id: submission._id,
-      codeUUID: submission.codeUUID,
-      problemId: submission.problemId,
-      language: submission.language,
-      status: submission.status,
-      testCaseResults: publicResults,
-      createdAt: submission.createdAt,
-    });
+    const result = await evaluate({ code, problem });
+    const submission = await Submission.create({ userId: req.user.userId, problemId, code, language, ...result });
+    res.status(201).json(toPublicSubmission(submission.toObject()));
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ message: err.message });
     console.error('Submission error:', err);
     res.status(500).json({ message: 'Submission failed' });
   }
@@ -100,19 +34,11 @@ export const getSubmissions = async (req, res) => {
   const { problemId } = req.query;
   try {
     if (!mongoose.isValidObjectId(problemId)) return res.status(400).json({ message: 'Invalid problemId' });
-
     const submissions = await Submission.find({ problemId, userId: req.user.userId })
       .sort({ createdAt: -1 })
+      .limit(50)
       .lean();
-
-    const safeSubmissions = submissions.map((submission) => ({
-      ...submission,
-      testCaseResults: (submission.testCaseResults || []).map(({ input, expected, actual, passed, hidden, status }) => (
-        hidden ? { passed, status } : { input, expected, actual, passed, status }
-      )),
-    }));
-
-    res.json(safeSubmissions);
+    res.json(submissions.map(toPublicSubmission));
   } catch (err) {
     console.error('Get submissions error:', err);
     res.status(500).json({ message: 'Failed to fetch submissions' });

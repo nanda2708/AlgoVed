@@ -1,85 +1,83 @@
 'use client';
 
+import { useContext, useEffect, useState } from 'react';
 import Link from 'next/link';
+import { AuthContext } from './context/AuthContext';
+import api from '../lib/api';
 
-const features = [
-  {
-    title: 'Run C++ code',
-    text: 'Write, compile, and execute C++ code in a secure browser-based development environment.',
-    href: '/compiler',
-  },
-  {
-    title: 'Code together',
-    text: 'Collaborate with other developers in real time using shared coding rooms.',
-    href: '/rooms',
-  },
-  {
-    title: 'Practice & judge',
-    text: 'Test your code against programming problems, hidden test cases, and automated judging.',
-    href: '/problems',
-  },
+const VERDICTS = [
+  ['Accepted', 'text-emerald-400', 'Output matched on every test.'],
+  ['Wrong Answer', 'text-red-400', 'Output differs from the expected answer. For visible tests you see both side by side.'],
+  ['Time Limit Exceeded', 'text-amber-400', 'Each problem sets its own limit; the process is killed when it runs out.'],
+  ['Runtime Error', 'text-orange-400', 'Non-zero exit, a crash signal, or going over the memory limit.'],
+  ['Compilation Error', 'text-yellow-300', 'The g++ diagnostics are returned as-is.'],
 ];
 
 export default function Home() {
-  return (
-    <div className="bg-coding-dark">
-      <section className="border-b border-slate-800">
-        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.15fr_.85fr] lg:items-center lg:px-8 lg:py-24">
-          <div>
-            <p className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-blue-400">Developer tools for collaborative coding</p>
-            <h1 className="max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-5xl lg:text-6xl">
-              Write, run, review, and collaborate on code.
-            </h1>
-            <p className="mt-6 max-w-2xl text-base leading-7 text-slate-300 sm:text-lg">
-              AlgoVed is a developer workspace for running C++ code, collaborating in real-time coding rooms, and getting AI-assisted code review directly in the browser.
-            </p>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <Link href="/compiler" className="rounded-md bg-blue-500 px-5 py-3 text-center text-sm font-semibold text-white transition hover:bg-blue-400">
-                Open compiler
-              </Link>
-              <Link href="/rooms" className="rounded-md border border-slate-700 px-5 py-3 text-center text-sm font-semibold text-slate-200 transition hover:border-slate-500 hover:bg-slate-900">
-                Open coding rooms
-              </Link>
-            </div>
-          </div>
+  const { isLoggedIn } = useContext(AuthContext);
+  const [stats, setStats] = useState(null);
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900 p-5 shadow-xl sm:p-6">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">AlgoVed</p>
-                <p className="mt-1 font-semibold text-white">A focused coding workspace</p>
+  useEffect(() => {
+    api.get('/leaderboard/stats').then(({ data }) => setStats(data)).catch(() => {});
+  }, []);
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+      <section className="py-16 sm:py-24">
+        <h1 className="max-w-2xl text-4xl font-bold tracking-tight text-white sm:text-5xl">Practice competitive programming in C++.</h1>
+        <p className="mt-5 max-w-2xl text-lg leading-8 text-slate-400">
+          AlgoVed is an online judge. Solve problems, get a verdict against hidden tests in a few seconds,
+          compete in timed contests, and pair up with a friend in a shared editor.
+        </p>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link href={isLoggedIn ? '/problems' : '/signup'} className="rounded-md bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-500">
+            {isLoggedIn ? 'Go to problems' : 'Create an account'}
+          </Link>
+          <Link href="/leaderboard" className="rounded-md border border-slate-700 px-5 py-2.5 text-sm font-medium text-slate-200 hover:bg-slate-800">View leaderboard</Link>
+        </div>
+        {stats && (
+          <p className="mt-8 text-sm text-slate-500">
+            {stats.problems} problems · {stats.users} users · {stats.submissions} submissions judged
+          </p>
+        )}
+      </section>
+
+      <section className="grid gap-10 border-t border-slate-800 py-14 md:grid-cols-2">
+        <div>
+          <h2 className="text-xl font-semibold text-white">How judging works</h2>
+          <ol className="mt-4 list-decimal space-y-2 pl-5 text-sm leading-6 text-slate-400">
+            <li>Your code is compiled once with <code className="text-slate-300">g++ -std=c++17 -O2</code>.</li>
+            <li>The binary runs against each test with the problem&apos;s time and memory limits enforced by the kernel (rlimits).</li>
+            <li>Output is compared line by line, ignoring trailing whitespace.</li>
+            <li>Judging stops at the first failing test, and the verdict is recorded on your profile.</li>
+          </ol>
+        </div>
+        <div>
+          <h2 className="text-xl font-semibold text-white">Verdicts</h2>
+          <dl className="mt-4 space-y-3 text-sm">
+            {VERDICTS.map(([name, color, text]) => (
+              <div key={name}>
+                <dt className={`font-medium ${color}`}>{name}</dt>
+                <dd className="text-slate-400">{text}</dd>
               </div>
-              <span className="rounded-full bg-emerald-400/10 px-3 py-1 text-xs font-medium text-emerald-400">Ready to code</span>
-            </div>
-            <div className="space-y-3 py-5 font-mono text-sm">
-              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">01&nbsp;&nbsp; #include &lt;iostream&gt;</div>
-              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">02&nbsp;&nbsp; int main() {'{'}</div>
-              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">03&nbsp;&nbsp;&nbsp;&nbsp; cout &lt;&lt; &quot;Hello, AlgoVed&quot;;</div>
-              <div className="rounded-md bg-slate-950 px-4 py-3 text-slate-300">04&nbsp;&nbsp; {'}'}</div>
-            </div>
-            <div className="flex items-center justify-between border-t border-slate-800 pt-4 text-xs text-slate-500">
-              <span>C++</span>
-              <span>Compile &amp; run</span>
-            </div>
-          </div>
+            ))}
+          </dl>
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-14 sm:px-6 lg:px-8 lg:py-18">
-        <div className="max-w-2xl">
-          <p className="text-sm font-semibold text-blue-400">Developer workspace</p>
-          <h2 className="mt-2 text-2xl font-bold text-white sm:text-3xl">Tools for writing and collaborating on code.</h2>
-          <p className="mt-3 text-slate-400">Compile C++, work together in real time, review code with AI assistance, and validate solutions through automated judging.</p>
-        </div>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {features.map((feature) => (
-            <Link key={feature.title} href={feature.href} className="group rounded-xl border border-slate-800 bg-slate-900 p-6 transition hover:-translate-y-0.5 hover:border-slate-700 hover:bg-slate-[950]">
-              <h3 className="text-lg font-semibold text-white">{feature.title}</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-400">{feature.text}</p>
-              <span className="mt-5 inline-block text-sm font-medium text-blue-400 group-hover:text-blue-300">Explore →</span>
-            </Link>
-          ))}
-        </div>
+      <section className="grid gap-6 border-t border-slate-800 py-14 sm:grid-cols-3">
+        <Link href="/compete" className="group">
+          <h3 className="font-semibold text-white group-hover:text-blue-300">Contests</h3>
+          <p className="mt-1 text-sm text-slate-400">ICPC-style scoreboard with penalty time, refreshed live.</p>
+        </Link>
+        <Link href="/rooms" className="group">
+          <h3 className="font-semibold text-white group-hover:text-blue-300">Coding rooms</h3>
+          <p className="mt-1 text-sm text-slate-400">A private shared editor over WebSockets, with presence.</p>
+        </Link>
+        <Link href="/compiler" className="group">
+          <h3 className="font-semibold text-white group-hover:text-blue-300">Playground</h3>
+          <p className="mt-1 text-sm text-slate-400">Run any C++ snippet with custom input, plus optional AI feedback.</p>
+        </Link>
       </section>
     </div>
   );

@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post('/create', auth, createRoom);
 router.get('/user/rooms', auth, getUserRooms);
-router.get('/:roomId', auth, getRoom);
 router.post('/invite', auth, inviteUser);
+router.get('/:roomId', auth, getRoom);
 
 export default router;

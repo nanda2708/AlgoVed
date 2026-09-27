@@ -1,135 +1,114 @@
 'use client';
-import { useState, useEffect, useContext, Suspense } from 'react';
+
+import { useContext, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { AuthContext } from '../context/AuthContext';
 import dynamic from 'next/dynamic';
-import axios from 'axios';
 import ReactMarkdown from 'react-markdown';
 import rehypeSanitize from 'rehype-sanitize';
+import { AuthContext } from '../context/AuthContext';
+import api, { errorMessage } from '../../lib/api';
+import Verdict from '../components/Verdict';
 
 const MonacoCodeEditor = dynamic(() => import('../components/MonacoCodeEditor'), { ssr: false });
-
-const Compiler = () => {
-  const { isLoggedIn, authLoading } = useContext(AuthContext);
-  const router = useRouter();
-
-  const [code, setCode] = useState(`#include <iostream>
+const DRAFT_KEY = 'algoved:draft:playground';
+const STARTER_CODE = `#include <bits/stdc++.h>
 using namespace std;
 
 int main() {
-    int num1, num2, sum;
-    cin >> num1 >> num2;
-    sum = num1 + num2;
-    cout << "The sum of the two numbers is: " << sum;
+    string name;
+    getline(cin, name);
+    cout << "Hello, " << name << "!" << endl;
     return 0;
-}`);
-  const [input, setInput] = useState('');
-  const [output, setOutput] = useState('');
-  const [aiReview, setAiReview] = useState('');
-  const [loadingRun, setLoadingRun] = useState(false);
-  const [loadingReview, setLoadingReview] = useState(false);
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
-  const [language, setLanguage] = useState('cpp');
+}
+`;
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-  const authConfig = () => ({ headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } });
+export default function Playground() {
+  const { isLoggedIn, authLoading } = useContext(AuthContext);
+  const router = useRouter();
+  const [code, setCode] = useState(STARTER_CODE);
+  const [input, setInput] = useState('');
+  const [result, setResult] = useState(null);
+  const [review, setReview] = useState('');
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!authLoading && !isLoggedIn) {
-      router.push('/login');
-    }
+    if (!authLoading && !isLoggedIn) router.replace('/login');
   }, [authLoading, isLoggedIn, router]);
 
-  const showToast = (msg) => {
-    setToast(msg);
-    setTimeout(() => setToast(''), 3000);
-  };
-
-  const handleRun = async () => {
-    setError('');
-    setOutput('');
-    setLoadingRun(true);
+  useEffect(() => {
     try {
-      const res = await axios.post(`${API_URL}/api/compiler/run`, {
-        language,
-        code,
-        input,
-      }, { ...authConfig(), timeout: 20000 });
-      setOutput(res.data.output || '');
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || 'Failed to run code');
-    } finally {
-      setLoadingRun(false);
-    }
+      const draft = localStorage.getItem(DRAFT_KEY);
+      if (draft) setCode(draft);
+    } catch { /* storage unavailable */ }
+  }, []);
+
+  const updateCode = (value) => {
+    setCode(value);
+    try { localStorage.setItem(DRAFT_KEY, value); } catch { /* storage unavailable */ }
   };
 
-  const handleAiReview = async () => {
-    setError('');
-    setAiReview('');
-    setLoadingReview(true);
-    try {
-      const res = await axios.post(`${API_URL}/api/compiler/ai-review`, { code }, { ...authConfig(), timeout: 30000 });
-      const reviewText = typeof res.data.review === 'string' ? res.data.review : String(res.data.review || '');
-      setAiReview(reviewText);
-      showToast('✅ AI Review Complete!');
-    } catch (err) {
-      setError(err.response?.data?.message || err.response?.data?.error || err.message || 'Failed to get AI review');
-    } finally {
-      setLoadingReview(false);
-    }
+  const perform = async (kind, action) => {
+    setBusy(kind); setError('');
+    try { await action(); } catch (err) { setError(errorMessage(err, 'Request failed')); } finally { setBusy(''); }
   };
 
-  if (authLoading || !isLoggedIn) {
-    return <div className="text-center mt-10 text-gray-600 dark:text-gray-400">Loading...</div>;
-  }
+  const run = () => perform('run', async () => {
+    const { data } = await api.post('/compiler/run', { language: 'cpp', code, input }, { timeout: 30000 });
+    setResult(data);
+  });
+
+  const requestReview = () => perform('review', async () => {
+    const { data } = await api.post('/compiler/ai-review', { code }, { timeout: 60000 });
+    setReview(data.review || 'No review was returned.');
+  });
+
+  if (authLoading || !isLoggedIn) return null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-      {toast && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 bg-green-600 text-white px-6 py-3 rounded-lg shadow-md z-50" role="status" aria-live="polite">
-          {toast}
-        </div>
-      )}
-
-      <h1 className="text-4xl font-bold text-center mb-8 text-gray-800 dark:text-gray-100">AlgoU Online Compiler</h1>
-
-      {error && <div className="text-red-500 text-center mb-6 font-medium" role="alert">{error}</div>}
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-gray-900 shadow-md rounded-xl p-4 flex flex-col">
-          <label className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-2">Code Editor</label>
-          <div className="bg-gray-900 rounded-lg overflow-hidden flex-grow" style={{ minHeight: '400px' }}>
-            <MonacoCodeEditor code={code} setCode={setCode} language={language} setLanguage={setLanguage} height="400px" />
+    <main className="mx-auto max-w-[1600px] px-3 py-4 sm:px-4 lg:h-[calc(100vh-64px)]">
+      <div className="grid h-full gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(320px,1fr)]">
+        <section className="flex min-h-[60vh] flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+          <div className="min-h-0 flex-1"><MonacoCodeEditor code={code} setCode={updateCode} language="cpp" height="100%" /></div>
+          <div className="flex items-center justify-between gap-2 border-t border-slate-800 p-3">
+            <span className="text-xs text-slate-500">g++ -std=c++17 -O2 · 2 s · 256 MB</span>
+            <div className="flex gap-2">
+              <button onClick={requestReview} disabled={!!busy} className="rounded-md px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 disabled:opacity-50">{busy === 'review' ? 'Reviewing…' : 'AI review'}</button>
+              <button onClick={run} disabled={!!busy} className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50">{busy === 'run' ? 'Running…' : 'Run'}</button>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div className="flex flex-col gap-4">
-          <div className="bg-white dark:bg-gray-900 shadow-md rounded-xl p-4">
-            <label htmlFor="input" className="block text-lg font-semibold text-gray-700 dark:text-gray-200 mb-2">Input</label>
-            <textarea id="input" value={input} onChange={(e) => setInput(e.target.value)} placeholder="Enter input values..." className="w-full p-3 text-sm border border-gray-300 dark:border-gray-700 rounded-md resize-none font-mono bg-white dark:bg-gray-800 text-black dark:text-white" rows="4" aria-label="Program Input" />
-          </div>
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+          <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <label htmlFor="stdin" className="text-sm font-medium text-white">stdin</label>
+            <textarea id="stdin" value={input} onChange={(e) => setInput(e.target.value)} rows={6} className="mt-2 w-full resize-y rounded-md border border-slate-700 bg-slate-950 p-3 font-mono text-xs text-slate-200 outline-none focus:border-blue-500" />
+          </section>
 
-          <div className="bg-white dark:bg-gray-900 shadow-md rounded-xl p-4 overflow-y-auto" style={{ maxHeight: '150px' }}>
-            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-2">Output</h2>
-            <pre className="text-sm font-mono text-gray-800 dark:text-gray-100 whitespace-pre-wrap">{output || '🧪 Run code to see output here...'}</pre>
-          </div>
+          <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-medium text-white">stdout</h2>
+              {result && (result.verdict === 'OK' ? <span className="text-xs text-slate-500">{result.timeMs} ms</span> : <Verdict status={result.verdict} className="text-xs" />)}
+            </div>
+            <pre className="mt-2 max-h-72 min-h-[96px] overflow-auto whitespace-pre-wrap rounded-md bg-slate-950 p-3 font-mono text-xs text-slate-200">{result?.output}</pre>
+            {result?.error && (
+              <>
+                <h3 className="mt-3 text-xs font-medium text-slate-400">{result.verdict === 'OK' ? 'stderr' : 'Error'}</h3>
+                <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-slate-950 p-3 font-mono text-xs text-amber-200">{result.error}</pre>
+              </>
+            )}
+          </section>
 
-          <div className="bg-white dark:bg-gray-900 shadow-md rounded-xl p-4 overflow-y-auto" style={{ maxHeight: '200px' }}>
-            <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-2">AI Code Review</h2>
-            {loadingReview ? <div className="text-center text-gray-600 dark:text-gray-400">Analyzing your code...</div> : aiReview ? <div className="prose prose-sm dark:prose-invert max-w-none text-gray-800 dark:text-gray-100"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{aiReview}</ReactMarkdown></div> : <div className="text-gray-500 dark:text-gray-400">Click &quot;AI Review&quot; to analyze your code.</div>}
-          </div>
+          {error && <p className="rounded-lg border border-red-900/60 bg-red-950/30 p-3 text-sm text-red-300" role="alert">{error}</p>}
 
-          <div className="flex gap-4">
-            <button onClick={handleRun} disabled={loadingRun || loadingReview} className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-blue-300 transition">{loadingRun ? 'Running...' : 'Run Code'}</button>
-            <button onClick={handleAiReview} disabled={loadingRun || loadingReview} className="flex-1 bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 disabled:bg-green-300 transition">{loadingReview ? 'Reviewing...' : 'AI Review'}</button>
-          </div>
+          {review && (
+            <section className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+              <div className="flex items-center justify-between"><h2 className="text-sm font-medium text-white">AI review</h2><button onClick={() => setReview('')} className="text-xs text-slate-500 hover:text-white">Dismiss</button></div>
+              <div className="markdown mt-2 text-sm"><ReactMarkdown rehypePlugins={[rehypeSanitize]}>{review}</ReactMarkdown></div>
+            </section>
+          )}
         </div>
       </div>
-    </div>
+    </main>
   );
-};
-
-export default function CompilerWrapper() {
-  return <Suspense fallback={<div className="text-center mt-10 text-gray-600 dark:text-gray-400">Loading...</div>}><Compiler /></Suspense>;
 }

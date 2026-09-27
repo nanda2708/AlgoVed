@@ -1,10 +1,10 @@
-name: AlgoVed CI
+name: CI
 
 on:
   push:
     branches: ['**']
   pull_request:
-    branches: ['main']
+    branches: [main]
 
 jobs:
   frontend:
@@ -20,10 +20,10 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm run lint
       - run: npm run build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:5000
-          NEXT_PUBLIC_CLIENT_URL: http://localhost:3000
 
   backend:
     runs-on: ubuntu-latest
@@ -38,11 +38,9 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
       - run: npm ci
-      - run: node --check index.js
-      - run: node --check config/db.js
-      - run: node --check controllers/submission.js
-      - run: node --check controllers/compiler.js
-      - run: node --check controllers/contestSubmissions.js
+      - name: Syntax check
+        run: find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check
+      - run: npm test
 
   compiler:
     runs-on: ubuntu-latest
@@ -57,6 +55,5 @@ jobs:
           cache: npm
           cache-dependency-path: compiler/package-lock.json
       - run: npm ci
-      - run: node --check index.js
-      - run: node --check executeCpp.js
-      - run: node --check aiCodeReview.js
+      # Compiles and runs real programs with g++ to check every verdict.
+      - run: npm test

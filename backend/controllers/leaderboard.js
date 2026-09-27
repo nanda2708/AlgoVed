@@ -1,3 +1,4 @@
+import Problem from '../models/Problem.js';
 import Submission from '../models/Submission.js';
 import User from '../models/User.js';
 
@@ -20,5 +21,19 @@ export const getLeaderboard = async (req, res) => {
   } catch (error) {
     console.error('Leaderboard error:', error);
     res.status(500).json({ message: 'Failed to load leaderboard' });
+  }
+};
+
+export const getPlatformStats = async (req, res) => {
+  try {
+    const [problems, users, submissions] = await Promise.all([
+      Problem.estimatedDocumentCount(),
+      User.estimatedDocumentCount(),
+      Submission.estimatedDocumentCount(),
+    ]);
+    res.json({ problems, users, submissions });
+  } catch (error) {
+    console.error('Platform stats error:', error);
+    res.status(500).json({ message: 'Failed to load stats' });
   }
 };

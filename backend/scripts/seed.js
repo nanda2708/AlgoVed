@@ -1,6 +1,5 @@
 import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
-import { v4 as uuidv4 } from 'uuid';
 import connectDB from '../config/db.js';
 import User from '../models/User.js';
 import Problem from '../models/Problem.js';
@@ -12,7 +11,7 @@ import mongoose from 'mongoose';
 dotenv.config();
 
 const demoUsers = [
-  { username: 'admin', email: 'admin@algoved.local', fullName: 'AlgoVed Admin', password: 'Admin@12345', isAdmin: true },
+  { username: 'admin', email: 'admin@algoved.local', fullName: 'AlgoVed Admin', password: process.env.SEED_ADMIN_PASSWORD || 'Admin@12345', isAdmin: true },
   { username: 'alice', email: 'alice@algoved.local', fullName: 'Alice Johnson', password: 'Alice@12345', isAdmin: false },
   { username: 'bob', email: 'bob@algoved.local', fullName: 'Bob Kumar', password: 'Bob@12345', isAdmin: false },
 ];
@@ -47,19 +46,20 @@ const demoProblems = [
   },
 ];
 
-const acceptedResult = (testCase) => ({ input: testCase.input, expected: testCase.output, actual: testCase.output, passed: true, hidden: Boolean(testCase.hidden), status: 'Accepted' });
+const acceptedResult = (testCase) => ({ input: testCase.input, expected: testCase.output, actual: testCase.output, hidden: Boolean(testCase.hidden), status: 'Accepted', timeMs: 3 });
 
-const upsertUser = async (data) => {
-  const password = await bcrypt.hash(data.password, 12);
-  return User.findOneAndUpdate(
-    { username: data.username },
-    { $set: { email: data.email, fullName: data.fullName, password, isAdmin: data.isAdmin } },
-    { new: true, upsert: true, setDefaultsOnInsert: true }
-  );
-};
+// Existing accounts keep their password, so re-running the seed never resets a changed one.
+const upsertUser = async ({ password, ...data }) => User.findOneAndUpdate(
+  { username: data.username },
+  { $set: { email: data.email, fullName: data.fullName, isAdmin: data.isAdmin }, $setOnInsert: { password: await bcrypt.hash(password, 12) } },
+  { new: true, upsert: true, setDefaultsOnInsert: true }
+);
 
 const seed = async () => {
   if (!process.env.MONGO_URI) throw new Error('MONGO_URI is not configured');
+  if (process.env.NODE_ENV === 'production' && !process.env.SEED_ADMIN_PASSWORD) {
+    throw new Error('Set SEED_ADMIN_PASSWORD before seeding a production database');
+  }
   await connectDB();
 
   const users = Object.fromEntries(await Promise.all(demoUsers.map(async (data) => [data.username, await upsertUser(data)])));
@@ -76,23 +76,27 @@ const seed = async () => {
   const now = Date.now();
   const contest = await Contest.findOneAndUpdate(
     { title: 'AlgoVed Practice Contest' },
-    { $set: { startTime: new Date(now - 60 * 60 * 1000), endTime: new Date(now + 24 * 60 * 60 * 1000), duration: 25 * 60 * 60, problems: problems.map((problem) => problem._id), participants: [users.alice._id, users.bob._id], status: 'ongoing' } },
+    { $set: { startTime: new Date(now - 60 * 60 * 1000), endTime: new Date(now + 24 * 60 * 60 * 1000), problems: problems.map((problem) => problem._id), participants: [users.alice._id, users.bob._id] } },
     { new: true, upsert: true, setDefaultsOnInsert: true }
   );
 
-  const sampleCode = '#include <iostream>\nusing namespace std;\nint main(){ long long a,b; if(cin>>a>>b) cout<<a+b; }';
+  const solutions = [
+    '#include <iostream>\nint main() { long long a, b; std::cin >> a >> b; std::cout << a + b << "\\n"; }',
+    '#include <algorithm>\n#include <iostream>\nint main() { long long a, b, c; std::cin >> a >> b >> c; std::cout << std::max({a, b, c}) << "\\n"; }',
+  ];
   for (const [index, username] of ['alice', 'bob'].entries()) {
     const problem = problems[index];
     const testCaseResults = problem.testCases.map(acceptedResult);
+    const judged = { code: solutions[index], language: 'cpp', status: 'Accepted', passed: testCaseResults.length, total: testCaseResults.length, timeMs: 3, testCaseResults };
     await Submission.findOneAndUpdate(
       { userId: users[username]._id, problemId: problem._id, status: 'Accepted' },
-      { $setOnInsert: { userId: users[username]._id, problemId: problem._id, codeUUID: uuidv4(), language: 'cpp', status: 'Accepted', testCaseResults } },
-      { upsert: true }
+      { $setOnInsert: { userId: users[username]._id, problemId: problem._id, ...judged } },
+      { upsert: true, setDefaultsOnInsert: true }
     );
     await ContestSubmission.findOneAndUpdate(
       { userId: users[username]._id, contestId: contest._id, problemId: problem._id, status: 'Accepted' },
-      { $setOnInsert: { userId: users[username]._id, contestId: contest._id, problemId: problem._id, code: sampleCode, codeUUID: uuidv4(), language: 'cpp', status: 'Accepted', testCaseResults } },
-      { upsert: true }
+      { $setOnInsert: { userId: users[username]._id, contestId: contest._id, problemId: problem._id, ...judged } },
+      { upsert: true, setDefaultsOnInsert: true }
     );
   }
 

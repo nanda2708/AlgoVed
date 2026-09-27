@@ -1,30 +1,49 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import axios from 'axios';
+import { useContext, useEffect, useState } from 'react';
+import { AuthContext } from '../context/AuthContext';
+import api, { errorMessage, isCancel } from '../../lib/api';
 
 export default function Leaderboard() {
+  const { user } = useContext(AuthContext);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
   useEffect(() => {
     const controller = new AbortController();
-    axios.get(`${API_URL}/api/leaderboard`, { signal: controller.signal, timeout: 10000 })
-      .then((res) => setRows(Array.isArray(res.data) ? res.data : []))
-      .catch((err) => { if (err.code !== 'ERR_CANCELED') setError(err.response?.data?.message || 'Failed to load leaderboard'); })
+    api.get('/leaderboard', { signal: controller.signal })
+      .then(({ data }) => setRows(data))
+      .catch((err) => { if (!isCancel(err)) setError(errorMessage(err, 'Failed to load leaderboard')); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [API_URL]);
+  }, []);
 
   return (
-    <main className="min-h-[calc(100vh-64px)] bg-slate-950 px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-7"><p className="text-sm font-medium text-blue-400">Community</p><h1 className="mt-1 text-3xl font-bold">Leaderboard</h1><p className="mt-2 text-sm text-slate-400">Rankings based on unique problems solved and accepted submissions.</p></div>
-        <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-          {loading ? <div className="p-8 text-sm text-slate-400">Loading leaderboard...</div> : error ? <div className="p-8 text-sm text-red-400">{error}</div> : rows.length === 0 ? <div className="p-8 text-center text-sm text-slate-400">No accepted submissions yet.</div> : <div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-slate-800 bg-slate-950 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-5 py-3">Rank</th><th className="px-5 py-3">User</th><th className="px-5 py-3">Problems solved</th><th className="px-5 py-3">Accepted</th></tr></thead><tbody>{rows.map((row) => <tr key={row.username} className="border-b border-slate-800 last:border-0"><td className="px-5 py-4 font-semibold text-slate-300">#{row.rank}</td><td className="px-5 py-4"><div className="font-medium text-white">{row.username}</div>{row.fullName && <div className="text-xs text-slate-500">{row.fullName}</div>}</td><td className="px-5 py-4 text-slate-300">{row.problemsSolved}</td><td className="px-5 py-4 text-slate-400">{row.acceptedSubmissions}</td></tr>)}</tbody></table></div>}
-        </div>
+    <main className="mx-auto max-w-4xl px-4 py-8 text-slate-100 sm:px-6 lg:px-8">
+      <h1 className="text-3xl font-bold">Leaderboard</h1>
+      <p className="mt-2 text-sm text-slate-400">Top 100 by distinct problems solved. Ties go to whoever reached that count first.</p>
+
+      <div className="mt-6 overflow-x-auto rounded-xl border border-slate-800">
+        {loading ? <p className="p-6 text-sm text-slate-400">Loading…</p>
+          : error ? <p className="p-6 text-sm text-red-400">{error}</p>
+            : rows.length === 0 ? <p className="p-6 text-sm text-slate-400">No accepted submissions yet.</p> : (
+              <table className="w-full min-w-[480px] text-left text-sm">
+                <thead className="bg-slate-900 text-xs text-slate-400">
+                  <tr><th className="px-4 py-2.5">#</th><th className="px-4 py-2.5">User</th><th className="px-4 py-2.5 text-right">Solved</th><th className="px-4 py-2.5 text-right">Accepted submissions</th></tr>
+                </thead>
+                <tbody>
+                  {rows.map((row) => (
+                    <tr key={row.username} className={`border-t border-slate-800 ${row.username === user?.username ? 'bg-blue-500/5' : ''}`}>
+                      <td className="px-4 py-2.5 text-slate-400">{row.rank}</td>
+                      <td className="px-4 py-2.5"><span className="font-medium">{row.username}</span>{row.fullName && <span className="ml-2 text-xs text-slate-500">{row.fullName}</span>}</td>
+                      <td className="px-4 py-2.5 text-right">{row.problemsSolved}</td>
+                      <td className="px-4 py-2.5 text-right text-slate-400">{row.acceptedSubmissions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
       </div>
     </main>
   );

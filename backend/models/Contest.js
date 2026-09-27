@@ -1,14 +1,13 @@
-import mongoose from "mongoose";
+import mongoose from 'mongoose';
 
+// A contest's status (upcoming/ongoing/ended) is derived from its time window
+// on every read, so it is not stored.
 const contestSchema = new mongoose.Schema({
-  title: { type: String, required: true },
+  title: { type: String, required: true, trim: true },
   startTime: { type: Date, required: true },
   endTime: { type: Date, required: true },
-  duration: { type: Number, required: true }, // in seconds
   problems: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Problem' }],
-  status: { type: String, enum: ['ongoing', 'upcoming', 'ended'], default: 'upcoming' },
   participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  createdAt: { type: Date, default: Date.now },
-});
+}, { timestamps: true });
 
 export default mongoose.model('Contest', contestSchema);
