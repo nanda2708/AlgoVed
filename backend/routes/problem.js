@@ -1,21 +1,15 @@
-  import express from 'express'
-  import {
-    getAllProblems,
-    getProblem,
-    createProblem,
-    updateProblem,
-    deleteProblem
-  } from '../controllers/problem.js';
-  import auth from '../middleware/auth.js';
-  const router = express.Router()
+import express from 'express';
+import { getAllProblems, getProblem, createProblem, updateProblem, deleteProblem } from '../controllers/problem.js';
+import auth from '../middleware/auth.js';
 
-  // Protected routes (require authentication)
-  router.get('/', auth, getAllProblems); // GET /api/problems
-  router.get('/:id', auth, getProblem); // GET /api/problems/:id
+const router = express.Router();
 
-  // Admin-only routes
-  router.post('/', auth, createProblem); // POST /api/problems
-  router.put('/:id', auth, updateProblem); // PUT /api/problems/:id
-  router.delete('/:id', auth, deleteProblem); // DELETE /api/problems/:id
+router.get('/', auth, getAllProblems);
+router.get('/:id', auth, getProblem);
 
-  export default router;
+// Admin only; the controllers check req.user.isAdmin.
+router.post('/', auth, createProblem);
+router.put('/:id', auth, updateProblem);
+router.delete('/:id', auth, deleteProblem);
+
+export default router;

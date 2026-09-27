@@ -10,8 +10,9 @@ const problemSchema = new mongoose.Schema({
     hidden: { type: Boolean, default: false },
   }],
   tags: { type: [String], default: [] },
+  timeLimitMs: { type: Number, default: 2000, min: 100, max: 10_000 },
+  memoryLimitMb: { type: Number, default: 256, min: 16, max: 1024 },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
 }, { timestamps: true });
 
-const Problem = mongoose.model('Problem', problemSchema);
-export default Problem;
+export default mongoose.model('Problem', problemSchema);

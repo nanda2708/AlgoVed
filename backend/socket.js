@@ -2,13 +2,56 @@ import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import Room from './models/Room.js';
 
-const initSocket = (server) => {
+const MAX_TEXT_LENGTH = 100_000;
+const PERSIST_DELAY_MS = 1500;
+
+/**
+ * Edits are broadcast immediately but written to MongoDB at most once per
+ * PERSIST_DELAY_MS per room, so a burst of keystrokes costs a single update.
+ */
+const createPersister = () => {
+  const pending = new Map();
+
+  const flush = async (roomId) => {
+    const entry = pending.get(roomId);
+    if (!entry) return;
+    pending.delete(roomId);
+    try {
+      await Room.updateOne({ roomId }, { $set: entry.changes });
+    } catch (error) {
+      console.error(`Failed to persist room ${roomId}:`, error.message);
+    }
+  };
+
+  const schedule = (roomId, changes) => {
+    const entry = pending.get(roomId) || { changes: {}, timer: null };
+    Object.assign(entry.changes, changes);
+    if (!entry.timer) entry.timer = setTimeout(() => flush(roomId), PERSIST_DELAY_MS);
+    pending.set(roomId, entry);
+  };
+
+  const flushAll = () => Promise.all([...pending.keys()].map((roomId) => {
+    clearTimeout(pending.get(roomId).timer);
+    return flush(roomId);
+  }));
+
+  return { schedule, flush, flushAll };
+};
+
+const initSocket = (server, allowedOrigins) => {
   const io = new Server(server, {
-    cors: { origin: process.env.NEXT_PUBLIC_CLIENT_URL || 'http://localhost:3000', methods: ['GET', 'POST'], credentials: true },
-    transports: ['websocket', 'polling'],
+    cors: { origin: allowedOrigins, methods: ['GET', 'POST'], credentials: true },
+    maxHttpBufferSize: 200_000,
     pingTimeout: 60000,
     pingInterval: 25000,
   });
+  const persister = createPersister();
+
+  // Tells everyone in a room which members currently have it open.
+  const broadcastPresence = async (roomId) => {
+    const sockets = await io.in(roomId).fetchSockets();
+    io.to(roomId).emit('presence', { roomId, online: [...new Set(sockets.map((s) => s.userId))] });
+  };
 
   io.use((socket, next) => {
     const token = socket.handshake.auth?.token;
@@ -23,13 +66,22 @@ const initSocket = (server) => {
   });
 
   io.on('connection', (socket) => {
-    socket.on('joinRoom', async ({ roomId, username }) => {
+    // Membership is checked once on join; later events are only accepted for that room.
+    const inRoom = (roomId) => typeof roomId === 'string' && socket.data.roomId === roomId;
+
+    socket.on('joinRoom', async ({ roomId } = {}) => {
       try {
         if (typeof roomId !== 'string' || !roomId) return socket.emit('error', 'Invalid room');
-        const room = await Room.findOne({ roomId }).lean();
+        await persister.flush(roomId);
+        const room = await Room.findOne({ roomId }).populate('users', 'username').lean();
         if (!room) return socket.emit('error', 'Room not found');
-        if (!room.users.some((id) => String(id) === socket.userId)) return socket.emit('error', 'You are not authorized to access this room');
+        if (!room.users.some((user) => String(user._id) === socket.userId)) return socket.emit('error', 'You are not authorized to access this room');
 
+        const previousRoom = socket.data.roomId;
+        if (previousRoom && previousRoom !== roomId) {
+          socket.leave(previousRoom);
+          broadcastPresence(previousRoom).catch(() => {});
+        }
         socket.join(roomId);
         socket.data.roomId = roomId;
         socket.emit('roomJoined', {
@@ -37,48 +89,34 @@ const initSocket = (server) => {
           code: room.code,
           language: room.language,
           input: room.input,
-          users: room.users.map((id) => String(id)),
+          members: room.users.map((user) => ({ id: String(user._id), username: user.username })),
         });
-        socket.to(roomId).emit('userJoined', { userId: socket.userId, username: typeof username === 'string' ? username.slice(0, 100) : 'User' });
+        await broadcastPresence(roomId);
       } catch (error) {
         console.error('Join room error:', error);
         socket.emit('error', 'Failed to join room');
       }
     });
 
-    socket.on('codeUpdate', async ({ roomId, code, language }) => {
-      try {
-        if (socket.data.roomId !== roomId || typeof code !== 'string' || code.length > 100_000) return socket.emit('error', 'Unauthorized or invalid code');
-        const room = await Room.findOne({ roomId });
-        if (!room || !room.users.some((id) => String(id) === socket.userId)) return socket.emit('error', 'Unauthorized');
-        room.code = code;
-        if (typeof language === 'string' && ['cpp'].includes(language)) room.language = language;
-        await room.save();
-        io.to(roomId).emit('codeUpdate', { roomId, code: room.code, language: room.language });
-      } catch (error) {
-        console.error('Code update error:', error);
-        socket.emit('error', 'Failed to update code');
-      }
+    socket.on('codeUpdate', ({ roomId, code } = {}) => {
+      if (!inRoom(roomId) || typeof code !== 'string' || code.length > MAX_TEXT_LENGTH) return socket.emit('error', 'Invalid code update');
+      // The sender already has this text; echoing it back would reset their cursor.
+      socket.to(roomId).emit('codeUpdate', { roomId, code, language: 'cpp' });
+      persister.schedule(roomId, { code });
     });
 
-    socket.on('inputUpdate', async ({ roomId, input }) => {
-      try {
-        if (socket.data.roomId !== roomId || typeof input !== 'string' || input.length > 100_000) return socket.emit('error', 'Unauthorized or invalid input');
-        const room = await Room.findOne({ roomId });
-        if (!room || !room.users.some((id) => String(id) === socket.userId)) return socket.emit('error', 'Unauthorized');
-        room.input = input;
-        await room.save();
-        io.to(roomId).emit('inputUpdate', { roomId, input });
-      } catch (error) {
-        console.error('Input update error:', error);
-        socket.emit('error', 'Failed to update input');
-      }
+    socket.on('inputUpdate', ({ roomId, input } = {}) => {
+      if (!inRoom(roomId) || typeof input !== 'string' || input.length > MAX_TEXT_LENGTH) return socket.emit('error', 'Invalid input update');
+      socket.to(roomId).emit('inputUpdate', { roomId, input });
+      persister.schedule(roomId, { input });
     });
 
-    socket.on('disconnect', () => {});
+    socket.on('disconnect', () => {
+      if (socket.data.roomId) broadcastPresence(socket.data.roomId).catch(() => {});
+    });
   });
 
-  return io;
+  return { io, flushPending: persister.flushAll };
 };
 
 export default initSocket;
