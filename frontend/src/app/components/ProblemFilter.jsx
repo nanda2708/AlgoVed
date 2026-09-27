@@ -7,6 +7,7 @@ export default function ProblemFilter({ problems }) {
   const [search, setSearch] = useState('');
   const [selectedTag, setSelectedTag] = useState('');
   const [selectedDifficulty, setSelectedDifficulty] = useState('');
+  const [hideSolved, setHideSolved] = useState(false);
 
   const tags = useMemo(() => [...new Set(
     (problems || []).flatMap((problem) => Array.isArray(problem?.tags) ? problem.tags : []).filter(Boolean)
@@ -18,8 +19,11 @@ export default function ProblemFilter({ problems }) {
     const matchesSearch = !query || title.includes(query);
     const matchesTag = !selectedTag || (Array.isArray(problem?.tags) && problem.tags.includes(selectedTag));
     const matchesDifficulty = !selectedDifficulty || problem?.difficulty === selectedDifficulty;
-    return matchesSearch && matchesTag && matchesDifficulty;
-  }), [problems, search, selectedTag, selectedDifficulty]);
+    const matchesStatus = !hideSolved || problem?.userStatus !== 'solved';
+    return matchesSearch && matchesTag && matchesDifficulty && matchesStatus;
+  }), [problems, search, selectedTag, selectedDifficulty, hideSolved]);
+
+  const solvedCount = (problems || []).filter((problem) => problem?.userStatus === 'solved').length;
 
   return (
     <div className="w-full">
@@ -54,10 +58,16 @@ export default function ProblemFilter({ problems }) {
       </div>
 
       <div className="mb-4 flex items-center justify-between gap-3">
-        <p className="text-sm text-slate-400">{filteredProblems.length} {filteredProblems.length === 1 ? 'problem' : 'problems'}</p>
-        {(search || selectedTag || selectedDifficulty) && (
-          <button type="button" onClick={() => { setSearch(''); setSelectedTag(''); setSelectedDifficulty(''); }} className="text-sm font-medium text-blue-400 hover:text-blue-300">Clear filters</button>
-        )}
+        <p className="text-sm text-slate-400">{filteredProblems.length} {filteredProblems.length === 1 ? 'problem' : 'problems'} · {solvedCount} solved</p>
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-slate-400">
+            <input type="checkbox" checked={hideSolved} onChange={(event) => setHideSolved(event.target.checked)} className="accent-blue-500" />
+            Hide solved
+          </label>
+          {(search || selectedTag || selectedDifficulty || hideSolved) && (
+            <button type="button" onClick={() => { setSearch(''); setSelectedTag(''); setSelectedDifficulty(''); setHideSolved(false); }} className="text-sm font-medium text-blue-400 hover:text-blue-300">Clear filters</button>
+          )}
+        </div>
       </div>
 
       {filteredProblems.length === 0 ? (

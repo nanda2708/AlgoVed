@@ -15,10 +15,14 @@ export default function ProblemCard({ problem }) {
     <Link href={`/problems/${problem?._id || problem?.id}`} className="group block h-full rounded-xl border border-slate-800 bg-slate-900 p-5 transition-colors hover:border-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-950">
       <div className="flex h-full flex-col">
         <div className="flex items-start justify-between gap-3">
-          <h2 className="min-w-0 text-base font-semibold leading-6 text-slate-100 group-hover:text-blue-300">{problem?.title || 'Untitled problem'}</h2>
+          <h2 className="min-w-0 text-base font-semibold leading-6 text-slate-100 group-hover:text-blue-300">
+            {problem?.title || 'Untitled problem'}
+            {problem?.userStatus === 'solved' && <span className="ml-2 text-xs font-normal text-emerald-400">Solved</span>}
+            {problem?.userStatus === 'attempted' && <span className="ml-2 text-xs font-normal text-amber-400">Attempted</span>}
+          </h2>
           <span className={`shrink-0 rounded-full border px-2.5 py-1 text-xs font-medium ${difficultyClass}`}>{difficulty}</span>
         </div>
-        <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">{problem?.description || 'Practice this problem and improve your problem-solving skills.'}</p>
+        <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-400">{problem?.description}</p>
         <div className="mt-auto flex flex-wrap gap-1.5 pt-5">
           {tags.slice(0, 4).map((tag) => (
             <span key={tag} className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-400">{tag}</span>

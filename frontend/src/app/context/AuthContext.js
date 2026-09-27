@@ -1,104 +1,46 @@
 'use client';
-import { createContext, useState, useEffect } from 'react';
-import axios from 'axios';
 
-export const AuthContext = createContext();
+import { createContext, useCallback, useEffect, useState } from 'react';
+import api from '../../lib/api';
+
+export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [authLoading, setAuthLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  const API_URL = process.env.NEXT_PUBLIC_API_URL;
+  const loadUser = useCallback(async () => {
+    const { data } = await api.get('/auth/me');
+    setUser({ ...data, userId: data._id });
+  }, []);
 
   useEffect(() => {
-    let mounted = true;
-
-    const checkAuth = async () => {
-      const token = localStorage.getItem('token');
-
-      if (!token) {
-        if (mounted) {
-          setIsLoggedIn(false);
-          setIsAdmin(false);
-          setUser(null);
-          setAuthLoading(false);
-        }
-        return;
-      }
-
-      if (!API_URL) {
-        console.error('NEXT_PUBLIC_API_URL is not configured');
-        localStorage.removeItem('token');
-        if (mounted) {
-          setIsLoggedIn(false);
-          setIsAdmin(false);
-          setUser(null);
-          setAuthLoading(false);
-        }
-        return;
-      }
-
-      try {
-        const res = await axios.get(`${API_URL}/api/auth/me`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (!mounted) return;
-        setUser({ userId: res.data._id, username: res.data.username, ...res.data });
-        setIsLoggedIn(true);
-        setIsAdmin(Boolean(res.data.isAdmin));
-      } catch (error) {
-        console.error('Auth check error:', error.response?.data || error.message);
-        localStorage.removeItem('token');
-        if (mounted) {
-          setIsLoggedIn(false);
-          setIsAdmin(false);
-          setUser(null);
-        }
-      } finally {
-        if (mounted) setAuthLoading(false);
-      }
-    };
-
-    checkAuth();
-    return () => {
-      mounted = false;
-    };
-  }, [API_URL]);
+    if (!localStorage.getItem('token')) {
+      setAuthLoading(false);
+      return;
+    }
+    loadUser()
+      .catch(() => localStorage.removeItem('token'))
+      .finally(() => setAuthLoading(false));
+  }, [loadUser]);
 
   const login = async (token) => {
-    if (!token || !API_URL) {
-      throw new Error('Authentication configuration is missing');
-    }
-
+    localStorage.setItem('token', token);
     try {
-      const res = await axios.get(`${API_URL}/api/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      localStorage.setItem('token', token);
-      setUser({ userId: res.data._id, username: res.data.username, ...res.data });
-      setIsLoggedIn(true);
-      setIsAdmin(Boolean(res.data.isAdmin));
+      await loadUser();
     } catch (error) {
       localStorage.removeItem('token');
-      setIsLoggedIn(false);
-      setIsAdmin(false);
-      setUser(null);
       throw error;
     }
   };
 
   const logout = () => {
     localStorage.removeItem('token');
-    setIsLoggedIn(false);
-    setIsAdmin(false);
     setUser(null);
   };
 
   return (
-    <AuthContext.Provider value={{ isLoggedIn, authLoading, isAdmin, user, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoggedIn: Boolean(user), isAdmin: Boolean(user?.isAdmin), authLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
